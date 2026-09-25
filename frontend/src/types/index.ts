@@ -4,7 +4,7 @@ export interface User {
   email?: string;
   current_level: number;
   start_time: string;
-  total_total_prompts: number;
+  total_prompts: number;
   failed_attempts: number;
   completed: boolean;
   status?: string;
@@ -57,7 +57,7 @@ export interface SubmitKeyResponse {
   final_score?: number;
   completion_time?: string;
   stats?: {
-    total_total_prompts: number;
+    total_prompts: number;
     elapsed_minutes: number;
     failed_attempts: number;
   };

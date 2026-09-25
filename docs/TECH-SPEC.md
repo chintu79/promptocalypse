@@ -183,7 +183,7 @@ The datastore is built on **SQLite 3.37+** utilizing `WAL` (Write-Ahead Logging)
 -- Pragmas applied on connection initialization
 PRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;
-PRAGMA busy_timeout = 5000;
+PRAGMA busy_timeout = 10000;
 PRAGMA cache_size = -64000;
 PRAGMA foreign_keys = ON;
 

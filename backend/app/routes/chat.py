@@ -108,14 +108,14 @@ async def chat(
 
     Processing pipeline:
     1. Pre-flight log: Immediate trace before cooldown, validation, or inference.
-    2. Cooldown check: Reject requests arriving within < 3.0s with HTTP 429.
+    2. Cooldown check: Atomically stamp the shared cooldown window and reject
+       requests arriving within < 3.0s with HTTP 429 (Issue #40).
     3. Session validation: Ensure participant exists and arena run is active.
-    4. Update rate limit window: Mark request timestamp for the validated user.
-    5. Level 2 Ingress Defense: Block prohibited keywords, short-circuit before Groq.
-    6. LLM Inference: Dispatch context to Groq (llama-3.1-8b-instant), or serve
+    4. Level 2 Ingress Defense: Block prohibited keywords, short-circuit before Groq.
+    5. LLM Inference: Dispatch context to Groq (llama-3.1-8b-instant), or serve
        the deterministic 300ms async mock reply when MOCK_LLM_MODE=true.
-    7. Level 3 Egress Defense: Mask secret key token leaks before dispatching reply.
-    8. Persistence: Record prompt interaction and update user metrics in a
+    6. Level 3 Egress Defense: Mask secret key token leaks before dispatching reply.
+    7. Persistence: Record prompt interaction and update user metrics in a
        background task, so the write never delays the HTTP response (Issue #39).
     """
     try:
@@ -134,9 +134,9 @@ async def chat(
         # Start total processing timer
         total_start = time.perf_counter()
 
-        # Step 1: Cooldown check (Sliding-window rate limiter)
+        # Step 1: Cooldown check & stamp (atomic, shared across all workers — Issue #40)
         try:
-            limiter.check(request.user_id)
+            await limiter.check_and_update(request.user_id)
         except HTTPException as e:
             logger.warning(
                 "Rate limit cooldown active for user",
@@ -189,10 +189,7 @@ async def chat(
 
             level = user_row["active_level"]
 
-        # Step 3: Record accepted request timestamp for rate limiter
-        limiter.update(request.user_id)
-
-        # Step 4: Level 2 Ingress Defense (Short-circuit without calling Groq)
+        # Step 3: Level 2 Ingress Defense (Short-circuit without calling Groq)
         if level == 2 and check_level2_ingress(request.prompt):
             total_latency_ms = int((time.perf_counter() - total_start) * 1000)
             background_tasks.add_task(
@@ -233,7 +230,7 @@ async def chat(
                 background=background_tasks,
             )
 
-        # Step 5: Dispatch LLM Inference call
+        # Step 4: Dispatch LLM Inference call
         system_prompt = SYSTEM_PROMPTS.get(level, "")
         llm_cfg = get_llm_config(settings)
         active_model = llm_cfg["model"]
@@ -273,7 +270,7 @@ async def chat(
                 raw_reply = response.choices[0].message.content or ""
         except Exception as e:
             # Upstream error/timeout: user prompt count is NOT penalized
-            limiter.reset(request.user_id)
+            await limiter.reset(request.user_id)
             upstream_latency_ms = int((time.perf_counter() - upstream_start) * 1000)
             total_latency_ms = int((time.perf_counter() - total_start) * 1000)
             logger.error(
@@ -300,13 +297,13 @@ async def chat(
 
         upstream_latency_ms = int((time.perf_counter() - upstream_start) * 1000)
 
-        # Step 6: Level 3 Egress Defense (Sanitize output tokens)
+        # Step 5: Level 3 Egress Defense (Sanitize output tokens)
         if level == 3:
             reply, is_leak = scrub_level3_egress(raw_reply)
         else:
             reply, is_leak = raw_reply, False
 
-        # Step 7: Ledger Persistence & Metrics (after the response, Issue #39)
+        # Step 6: Ledger Persistence & Metrics (after the response, Issue #39)
         background_tasks.add_task(
             record_prompt_interaction_bg,
             user_id=request.user_id,

@@ -318,12 +318,12 @@ class TestChatEndpointIntegration(unittest.TestCase):
 
         app.dependency_overrides[get_groq_client] = lambda: self.mock_groq_client
         from app.rate_limiter import get_rate_limiter
-        get_rate_limiter().reset()
+        asyncio.run(get_rate_limiter().reset())
         self.client = TestClient(app)
 
     def tearDown(self):
         from app.rate_limiter import get_rate_limiter
-        get_rate_limiter().reset()
+        asyncio.run(get_rate_limiter().reset())
         app.dependency_overrides.clear()
         if os.path.exists(self.temp_db.name):
             os.remove(self.temp_db.name)

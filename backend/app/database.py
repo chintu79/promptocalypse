@@ -62,6 +62,14 @@ CREATE TABLE IF NOT EXISTS submissions (
     submitted_at TIMESTAMP NOT NULL,
     FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+
+-- 4. Shared rate-limiter cooldown state (Issue #40)
+-- One row per participant so every Uvicorn worker process enforces the same
+-- cooldown window; in-memory state exists once per worker process only.
+CREATE TABLE IF NOT EXISTS rate_limits (
+    user_id TEXT PRIMARY KEY,
+    last_request_at REAL NOT NULL
+);
 """
 
 # ---------------------------------------------------------------------------

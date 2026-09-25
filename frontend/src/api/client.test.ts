@@ -10,6 +10,7 @@ import {
   API_BASE,
   ChatPromptError,
   parseProcessTime,
+  registerUser,
   sendPrompt,
 } from './client.ts'
 import {
@@ -221,5 +222,50 @@ describe('POST /api/chat — HTTP 400 Level 2 ingress intercept', () => {
       'Firewall Alert: Ingress inspection detected prohibited keyword pattern.'
     )
     assert.equal(result.latencyMs, 12)
+  })
+})
+
+describe('POST /api/auth/register', () => {
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  it('posts a handle without requiring an email field', async () => {
+    let capturedUrl = ''
+    let capturedInit: RequestInit | undefined
+    stubFetch(async (input: RequestInfo | URL, init?: RequestInit) => {
+      capturedUrl = String(input)
+      capturedInit = init
+      return jsonResponse({
+        user_id: 'usr_54',
+        username: 'Neo',
+        current_level: 1,
+        start_time: '2026-09-25T12:00:00.000Z',
+        total_prompts: 0,
+        failed_attempts: 0,
+        completed: false,
+      })
+    })
+
+    const result = await registerUser('Neo')
+
+    assert.equal(capturedUrl, `${API_BASE}/auth/register`)
+    assert.equal(capturedInit?.method, 'POST')
+    assert.deepEqual(JSON.parse(String(capturedInit?.body)), {
+      username: 'Neo',
+    })
+    assert.equal(result.user_id, 'usr_54')
+    assert.equal(result.start_time, '2026-09-25T12:00:00.000Z')
+  })
+
+  it('surfaces registration API errors', async () => {
+    stubFetch(async () =>
+      jsonResponse({ detail: 'Registration service unavailable' }, { status: 503 })
+    )
+
+    await assert.rejects(
+      () => registerUser('Neo'),
+      /Registration service unavailable/
+    )
   })
 })

@@ -148,7 +148,7 @@ async def verify_and_progress(
                                   stamp completed_at,
                                   {"status": "completed", "final_score": ...}
 
-    The BEGIN IMMEDIATE write-lock (busy_timeout=5000ms) serializes
+    The BEGIN IMMEDIATE write-lock (busy_timeout=10000ms) serializes
     concurrent submissions so level unlocks and scoring are atomic.
     """
     clean_key = submitted_key.strip()

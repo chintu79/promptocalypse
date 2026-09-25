@@ -98,7 +98,7 @@ CREATE INDEX IF NOT EXISTS idx_submissions_user
 # ---------------------------------------------------------------------------
 # - WAL:          Non-blocking concurrent readers during write transactions.
 # - synchronous:  NORMAL is safe with WAL and avoids fsync on every commit.
-# - busy_timeout: Wait up to 5 s for a write-lock instead of failing immediately.
+# - busy_timeout: Wait up to 10 s for a write-lock instead of failing immediately.
 # - cache_size:   -64000 → 64 MB in-memory page cache (negative = KiB).
 # - foreign_keys: Enforce FK constraints at runtime (SQLite default is OFF).
 # ---------------------------------------------------------------------------
@@ -106,7 +106,7 @@ CREATE INDEX IF NOT EXISTS idx_submissions_user
 _PRAGMAS = [
     "PRAGMA journal_mode = WAL;",
     "PRAGMA synchronous = NORMAL;",
-    "PRAGMA busy_timeout = 5000;",
+    "PRAGMA busy_timeout = 10000;",
     "PRAGMA cache_size = -64000;",
     "PRAGMA foreign_keys = ON;",
 ]

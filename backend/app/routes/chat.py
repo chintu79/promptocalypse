@@ -13,9 +13,10 @@ References:
 
 import asyncio
 import time
-from typing import Annotated
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi.responses import JSONResponse
 import httpx
 import openai
 
@@ -77,13 +78,31 @@ def get_groq_client(
     )
 
 
+async def record_prompt_interaction_bg(**kwargs: Any) -> None:
+    """
+    Issue #39: run the prompt-ledger write after the response is sent.
+
+    The write borrows its own pooled connection, so a SQLITE_BUSY wait here
+    can no longer turn an already-successful chat into an HTTP 500.
+    """
+    try:
+        async with get_db_context() as db:
+            await record_prompt_interaction(db=db, **kwargs)
+    except Exception:
+        logger.exception(
+            "Prompt ledger write failed",
+            extra={"event": "prompt_ledger_write_failed"},
+        )
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat(
     request: ChatRequest,
+    background_tasks: BackgroundTasks,
     settings: Annotated[Settings, Depends(get_settings)],
     client: Annotated[openai.AsyncOpenAI, Depends(get_groq_client)],
     limiter: Annotated[SlidingWindowRateLimiter, Depends(get_rate_limiter)],
-) -> ChatResponse:
+) -> ChatResponse | JSONResponse:
     """
     Execute a user prompt against the target LLM for their current challenge level.
 
@@ -96,7 +115,8 @@ async def chat(
     6. LLM Inference: Dispatch context to Groq (llama-3.1-8b-instant), or serve
        the deterministic 300ms async mock reply when MOCK_LLM_MODE=true.
     7. Level 3 Egress Defense: Mask secret key token leaks before dispatching reply.
-    8. Persistence: Atomically record prompt interaction and update user metrics.
+    8. Persistence: Record prompt interaction and update user metrics in a
+       background task, so the write never delays the HTTP response (Issue #39).
     """
     try:
         # Pre-flight log immediately at sentence 1 before redaction, DB access, or cooldown runs
@@ -173,18 +193,17 @@ async def chat(
         # Step 4: Level 2 Ingress Defense (Short-circuit without calling Groq)
         if level == 2 and check_level2_ingress(request.prompt):
             total_latency_ms = int((time.perf_counter() - total_start) * 1000)
-            async with get_db_context() as db:
-                await record_prompt_interaction(
-                    db=db,
-                    user_id=request.user_id,
-                    level=level,
-                    prompt_text=request.prompt,
-                    response_text=L2_FIREWALL_INTERCEPT_TEXT,
-                    char_count=len(request.prompt),
-                    latency_ms=0,
-                    is_firewall_blocked=True,
-                    is_leak_blocked=False,
-                )
+            background_tasks.add_task(
+                record_prompt_interaction_bg,
+                user_id=request.user_id,
+                level=level,
+                prompt_text=request.prompt,
+                response_text=L2_FIREWALL_INTERCEPT_TEXT,
+                char_count=len(request.prompt),
+                latency_ms=0,
+                is_firewall_blocked=True,
+                is_leak_blocked=False,
+            )
             logger.info(
                 "Ingress firewall intercepted prohibited prompt",
                 extra={
@@ -203,9 +222,13 @@ async def chat(
                     "prompt": request.prompt,
                 },
             )
-            raise HTTPException(
+            # Return the error response directly: FastAPI builds a fresh
+            # response for raised HTTPExceptions, which would drop the ledger
+            # write registered above (Issue #39).
+            return JSONResponse(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=L2_FIREWALL_ALERT_REPLY,
+                content={"detail": L2_FIREWALL_ALERT_REPLY},
+                background=background_tasks,
             )
 
         # Step 5: Dispatch LLM Inference call
@@ -281,19 +304,18 @@ async def chat(
         else:
             reply, is_leak = raw_reply, False
 
-        # Step 7: Ledger Persistence & Metrics
-        async with get_db_context() as db:
-            await record_prompt_interaction(
-                db=db,
-                user_id=request.user_id,
-                level=level,
-                prompt_text=request.prompt,
-                response_text=reply,
-                char_count=len(request.prompt),
-                latency_ms=upstream_latency_ms,
-                is_firewall_blocked=False,
-                is_leak_blocked=is_leak,
-            )
+        # Step 7: Ledger Persistence & Metrics (after the response, Issue #39)
+        background_tasks.add_task(
+            record_prompt_interaction_bg,
+            user_id=request.user_id,
+            level=level,
+            prompt_text=request.prompt,
+            response_text=reply,
+            char_count=len(request.prompt),
+            latency_ms=upstream_latency_ms,
+            is_firewall_blocked=False,
+            is_leak_blocked=is_leak,
+        )
 
         total_latency_ms = int((time.perf_counter() - total_start) * 1000)
 

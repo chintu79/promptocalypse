@@ -164,7 +164,7 @@ Execute the following PRAGMAs during database initialization to avoid file-level
 
 SQLPRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;
-PRAGMA busy_timeout = 5000;
+PRAGMA busy_timeout = 10000;
 PRAGMA cache_size = -64000; -- 64MB In-Memory Cache
 
 4. Operational Telemetry & Scoring Subsystem

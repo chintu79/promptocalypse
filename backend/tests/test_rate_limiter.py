@@ -26,10 +26,19 @@ from app.rate_limiter import SlidingWindowRateLimiter, get_rate_limiter
 from app.routes.chat import get_groq_client
 
 
-class TestSlidingWindowRateLimiterUnit(unittest.TestCase):
+class TestSlidingWindowRateLimiterUnit(unittest.IsolatedAsyncioTestCase):
     """Unit tests for SlidingWindowRateLimiter logic using simulated time."""
 
-    def setUp(self):
+    async def asyncSetUp(self):
+        # Cooldown state lives in the shared rate_limits table (Issue #40),
+        # so even unit tests need a real - and temporary - database.
+        self.temp_db = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        self.temp_db.close()
+        self._original_db_path = os.environ.get("DB_PATH")
+        os.environ["DB_PATH"] = self.temp_db.name
+        get_settings.cache_clear()
+        await init_db()
+
         self.simulated_time = 100.0
 
         def clock():
@@ -37,87 +46,175 @@ class TestSlidingWindowRateLimiterUnit(unittest.TestCase):
 
         self.limiter = SlidingWindowRateLimiter(cooldown_seconds=3.0, time_func=clock)
 
-    def test_first_request_allowed(self):
-        """Initial request for any user must pass without error."""
-        self.limiter.check("usr_1")
-        self.limiter.update("usr_1")
-        self.assertEqual(self.limiter.get_remaining("usr_1"), 3.0)
+    async def asyncTearDown(self):
+        if self._original_db_path is None:
+            os.environ.pop("DB_PATH", None)
+        else:
+            os.environ["DB_PATH"] = self._original_db_path
+        get_settings.cache_clear()
+        for suffix in ("", "-wal", "-shm"):
+            try:
+                os.remove(self.temp_db.name + suffix)
+            except OSError:
+                pass
 
-    def test_subsequent_request_within_cooldown_rejected(self):
+    async def test_first_request_allowed(self):
+        """Initial request for any user must pass without error."""
+        await self.limiter.check("usr_1")
+        await self.limiter.update("usr_1")
+        self.assertEqual(await self.limiter.get_remaining("usr_1"), 3.0)
+
+    async def test_subsequent_request_within_cooldown_rejected(self):
         """Request arriving < 3.0s after previous request must raise HTTP 429."""
-        self.limiter.check_and_update("usr_1")
+        await self.limiter.check_and_update("usr_1")
 
         # 1.5 seconds later (< 3.0s)
         self.simulated_time += 1.5
         with self.assertRaises(HTTPException) as ctx:
-            self.limiter.check("usr_1")
+            await self.limiter.check("usr_1")
 
         self.assertEqual(ctx.exception.status_code, 429)
         self.assertIn("Rate limit: Wait", ctx.exception.detail)
         self.assertIn("1.5s", ctx.exception.detail)
         self.assertIn("Retry-After", ctx.exception.headers)
 
-    def test_rejection_does_not_extend_cooldown(self):
+    async def test_rejection_does_not_extend_cooldown(self):
         """Rejected attempts must not update last_request timestamp or push back cooldown expiration."""
-        self.limiter.check_and_update("usr_1")
+        await self.limiter.check_and_update("usr_1")
 
         # t = 100.0 + 1.0 = 101.0 (blocked)
         self.simulated_time += 1.0
         with self.assertRaises(HTTPException):
-            self.limiter.check("usr_1")
+            await self.limiter.check("usr_1")
 
         # t = 100.0 + 2.5 = 102.5 (blocked)
         self.simulated_time += 1.5
         with self.assertRaises(HTTPException):
-            self.limiter.check("usr_1")
+            await self.limiter.check("usr_1")
 
         # t = 100.0 + 3.0 = 103.0 (exactly 3.0s after original request at 100.0 -> allowed!)
         self.simulated_time += 0.5
         # Should not raise
-        self.limiter.check("usr_1")
+        await self.limiter.check("usr_1")
 
-    def test_boundary_conditions(self):
+    async def test_boundary_conditions(self):
         """Verify boundary condition at exactly 3.0 seconds."""
-        self.limiter.check_and_update("usr_1")
+        await self.limiter.check_and_update("usr_1")
 
         # 2.99 seconds later -> blocked
         self.simulated_time += 2.99
         with self.assertRaises(HTTPException):
-            self.limiter.check("usr_1")
+            await self.limiter.check("usr_1")
 
         # 3.00 seconds later -> allowed
         self.simulated_time = 100.0 + 3.00
-        self.limiter.check("usr_1")
+        await self.limiter.check("usr_1")
 
-    def test_different_users_are_independent(self):
+    async def test_different_users_are_independent(self):
         """User A's request does not throttle User B."""
-        self.limiter.check_and_update("usr_a")
+        await self.limiter.check_and_update("usr_a")
 
         # User B makes a request immediately at same timestamp
-        self.limiter.check("usr_b")
-        self.limiter.update("usr_b")
+        await self.limiter.check("usr_b")
+        await self.limiter.update("usr_b")
 
         # User A is blocked
         with self.assertRaises(HTTPException):
-            self.limiter.check("usr_a")
+            await self.limiter.check("usr_a")
 
         # User B is blocked
         with self.assertRaises(HTTPException):
-            self.limiter.check("usr_b")
+            await self.limiter.check("usr_b")
 
-    def test_reset_user_and_all(self):
+    async def test_reset_user_and_all(self):
         """Reset clears rate limit state correctly."""
-        self.limiter.check_and_update("usr_1")
-        self.limiter.check_and_update("usr_2")
+        await self.limiter.check_and_update("usr_1")
+        await self.limiter.check_and_update("usr_2")
 
         # Reset single user
-        self.limiter.reset("usr_1")
-        self.assertEqual(self.limiter.get_remaining("usr_1"), 0.0)
-        self.assertGreater(self.limiter.get_remaining("usr_2"), 0.0)
+        await self.limiter.reset("usr_1")
+        self.assertEqual(await self.limiter.get_remaining("usr_1"), 0.0)
+        self.assertGreater(await self.limiter.get_remaining("usr_2"), 0.0)
 
         # Reset all
-        self.limiter.reset()
-        self.assertEqual(self.limiter.get_remaining("usr_2"), 0.0)
+        await self.limiter.reset()
+        self.assertEqual(await self.limiter.get_remaining("usr_2"), 0.0)
+
+
+class TestSharedCooldownAcrossWorkers(unittest.IsolatedAsyncioTestCase):
+    """
+    Issue #40: the cooldown must be enforced across worker processes.
+
+    Every limiter instance below stands in for a separate Uvicorn worker: they
+    share no memory, only the rate_limits table.
+    """
+
+    async def asyncSetUp(self):
+        self.temp_db = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        self.temp_db.close()
+        self._original_db_path = os.environ.get("DB_PATH")
+        os.environ["DB_PATH"] = self.temp_db.name
+        get_settings.cache_clear()
+        await init_db()
+
+        self.simulated_time = 1000.0
+
+        def clock():
+            return self.simulated_time
+
+        self.clock = clock
+
+    async def asyncTearDown(self):
+        if self._original_db_path is None:
+            os.environ.pop("DB_PATH", None)
+        else:
+            os.environ["DB_PATH"] = self._original_db_path
+        get_settings.cache_clear()
+        for suffix in ("", "-wal", "-shm"):
+            try:
+                os.remove(self.temp_db.name + suffix)
+            except OSError:
+                pass
+
+    def _worker(self) -> SlidingWindowRateLimiter:
+        """A fresh limiter instance - the state another worker would hold."""
+        return SlidingWindowRateLimiter(cooldown_seconds=3.0, time_func=self.clock)
+
+    async def test_cooldown_is_seen_by_another_worker(self):
+        """A request accepted by worker A still throttles worker B."""
+        worker_a = self._worker()
+        worker_b = self._worker()
+
+        await worker_a.check_and_update("usr_shared")
+
+        # Same participant, different worker, one moment later.
+        self.simulated_time += 1.0
+        with self.assertRaises(HTTPException) as ctx:
+            await worker_b.check_and_update("usr_shared")
+        self.assertEqual(ctx.exception.status_code, 429)
+
+        # Once the cooldown expires the other worker admits the request.
+        self.simulated_time += 2.5
+        await worker_b.check_and_update("usr_shared")
+
+    async def test_four_simultaneous_requests_admit_exactly_one(self):
+        """N concurrent admits on one window must not all win the race."""
+        limiter = self._worker()
+
+        results = await asyncio.gather(
+            *[limiter.check_and_update("usr_burst") for _ in range(4)],
+            return_exceptions=True,
+        )
+
+        admitted = [r for r in results if r is None]
+        rejected = [r for r in results if isinstance(r, HTTPException)]
+        unexpected = [
+            r for r in results if r is not None and not isinstance(r, HTTPException)
+        ]
+
+        self.assertEqual(unexpected, [])
+        self.assertEqual(len(admitted), 1, f"admitted={results}")
+        self.assertEqual(len(rejected), 3, f"admitted={results}")
 
 
 class TestChatRateLimiterIntegration(unittest.TestCase):

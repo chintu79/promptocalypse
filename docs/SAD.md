@@ -28,7 +28,7 @@ The AI Jailbreak Arena architecture provides a low-latency, tamper-resistant env
 │                          APPLICATION TIER                              │
 │                                                                        │
 │   [ FastAPI Core Gateway (Uvicorn 4-Worker Cluster) ]                  │
-│   ├── In-Memory Sliding-Window Rate Limiter (3s Cooldown)              │
+│   ├── Shared SQLite Sliding-Window Rate Limiter (3s Cooldown)          │
 │   ├── Level 2 Ingress Security Filter (Regex Word Denylist)           │
 │   ├── Level Context Assembler (Stateful Injections)                   │
 │   ├── Outbound Inference Client (Async HTTP Pool)                      │
@@ -77,7 +77,7 @@ Option A (Campus LAN): Direct binding on 0.0.0.0:8000 via local Wi-Fi router sub
 
 Option B (Remote / Zero-Configuration Port Forwarding): cloudflared tunnel creating an encrypted virtual bridge to the host machine without public port exposure or port-forwarding requirements.
 
-Per-Host Throttling: The FastAPI backend maintains an in-memory sliding window timestamp ledger tracking user_id.
+Per-Host Throttling: The FastAPI backend stores the sliding-window timestamp ledger in the shared `rate_limits` SQLite table tracking user_id, so every worker process enforces the same cooldown.
 
 Requests arriving within $< 3.0\text{s}$ of the prior request yield HTTP 429 Too Many Requests.
 

@@ -239,6 +239,13 @@ CREATE TABLE submissions (
 );
 
 CREATE INDEX idx_submissions_user ON submissions(user_id);
+
+-- 4. Shared rate-limiter cooldown state (Issue #40): one row per participant
+--    so every Uvicorn worker process enforces the same sliding window
+CREATE TABLE rate_limits (
+    user_id TEXT PRIMARY KEY,
+    last_request_at REAL NOT NULL
+);
 ```
 
 ---

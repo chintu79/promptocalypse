@@ -1,7 +1,10 @@
 """
-In-memory sliding-window rate limiter for AI Jailbreak Arena.
+Sliding-window rate limiter for AI Jailbreak Arena.
 
 Implements Issue #3: [Backend] Sliding-Window 3-Second Rate Limiter.
+Issue #40 moves the cooldown state into the shared ``rate_limits`` SQLite
+table, because an in-memory dictionary exists once per Uvicorn worker process
+and let a participant fan requests across workers to bypass the cooldown.
 References:
 - docs/PRD.md §4 (Rate Limiting & Protections) & §6 (Complete Backend Implementation)
 - docs/SAD.md §2.2 (Per-Host Throttling)
@@ -11,29 +14,42 @@ References:
 import time
 from typing import Annotated, Callable, Optional
 
+import aiosqlite
 from fastapi import Depends, HTTPException, status
 
 from app.config import Settings, get_settings
+from app.database import get_db_context
+
+
+def _cooldown_exception(remaining: float) -> HTTPException:
+    """Build the HTTP 429 raised while a participant is inside the cooldown window."""
+    return HTTPException(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        detail=f"Rate limit: Wait {remaining:.1f}s",
+        headers={"Retry-After": str(max(1, int(round(remaining))))},
+    )
 
 
 class SlidingWindowRateLimiter:
     """
     Per-user sliding-window rate limiter enforcing a cooldown between requests.
 
-    Maintains an in-memory dictionary of last-request timestamps per user_id.
+    Last-accepted request timestamps live in the shared ``rate_limits`` table
+    instead of process memory, so all Uvicorn workers enforce one window.
     Rejects requests arriving within < cooldown_seconds with HTTP 429.
     """
 
     def __init__(
         self,
         cooldown_seconds: float = 3.0,
-        time_func: Callable[[], float] = time.monotonic,
+        time_func: Callable[[], float] = time.time,
     ) -> None:
         self.cooldown_seconds = cooldown_seconds
+        # Wall clock, not monotonic: timestamps are persisted and compared
+        # across worker processes (monotonic is meaningless across restarts).
         self.time_func = time_func
-        self._last_request: dict[str, float] = {}
 
-    def check(self, user_id: str) -> None:
+    async def check(self, user_id: str) -> None:
         """
         Check if the participant is on cooldown.
 
@@ -41,53 +57,87 @@ class SlidingWindowRateLimiter:
         Does not mutate the timestamp so that rejected requests do not penalize the user
         or reset the cooldown timer.
         """
-        last_time = self._last_request.get(user_id)
-        if last_time is not None:
-            now = self.time_func()
-            elapsed = now - last_time
-            if elapsed < self.cooldown_seconds:
-                remaining = self.cooldown_seconds - elapsed
-                raise HTTPException(
-                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail=f"Rate limit: Wait {remaining:.1f}s",
-                    headers={"Retry-After": str(max(1, int(round(remaining))))},
-                )
+        async with get_db_context() as db:
+            last_time = await self._last_stamp(db, user_id)
+        if last_time is None:
+            return
+        elapsed = self.time_func() - last_time
+        if elapsed < self.cooldown_seconds:
+            raise _cooldown_exception(self.cooldown_seconds - elapsed)
 
-    def update(self, user_id: str) -> None:
+    async def update(self, user_id: str) -> None:
         """Record current timestamp as the user's latest accepted request."""
+        async with get_db_context() as db:
+            await self._stamp(db, user_id, self.time_func())
+            await db.commit()
+
+    async def check_and_update(self, user_id: str) -> None:
+        """
+        Atomic check and update for a user request.
+
+        BEGIN IMMEDIATE serializes concurrent callers across event loops and
+        worker processes, so N simultaneous requests admit exactly one instead
+        of each worker trusting its own view of the window (Issue #40).
+        """
         now = self.time_func()
-        self._last_request[user_id] = now
+        async with get_db_context() as db:
+            try:
+                await db.execute("BEGIN IMMEDIATE")
+                last_time = await self._last_stamp(db, user_id)
+                if last_time is not None and (now - last_time) < self.cooldown_seconds:
+                    raise _cooldown_exception(self.cooldown_seconds - (now - last_time))
+                await self._stamp(db, user_id, now)
+                await db.commit()
+            except BaseException:
+                # A rejected request must leave no stamp behind.
+                await db.rollback()
+                raise
 
-        # Lightweight periodic cleanup if dictionary grows large
-        if len(self._last_request) > 1000:
-            self._prune(now)
-
-    def check_and_update(self, user_id: str) -> None:
-        """Atomic check and update for a user request."""
-        self.check(user_id)
-        self.update(user_id)
-
-    def get_remaining(self, user_id: str) -> float:
+    async def get_remaining(self, user_id: str) -> float:
         """Return remaining cooldown seconds for user, or 0.0 if not on cooldown."""
-        last_time = self._last_request.get(user_id)
+        async with get_db_context() as db:
+            last_time = await self._last_stamp(db, user_id)
         if last_time is None:
             return 0.0
         elapsed = self.time_func() - last_time
         return max(0.0, self.cooldown_seconds - elapsed)
 
-    def reset(self, user_id: Optional[str] = None) -> None:
+    async def reset(self, user_id: Optional[str] = None) -> None:
         """Reset rate limiter state for a specific user, or all users if None."""
-        if user_id is not None:
-            self._last_request.pop(user_id, None)
-        else:
-            self._last_request.clear()
+        async with get_db_context() as db:
+            if user_id is not None:
+                await db.execute(
+                    "DELETE FROM rate_limits WHERE user_id = ?", (user_id,)
+                )
+            else:
+                await db.execute("DELETE FROM rate_limits")
+            await db.commit()
 
-    def _prune(self, now: float) -> None:
-        """Prune timestamps older than 2x cooldown to prevent memory leaks."""
-        cutoff = now - (self.cooldown_seconds * 2)
-        stale_keys = [k for k, v in self._last_request.items() if v < cutoff]
-        for k in stale_keys:
-            del self._last_request[k]
+    async def _last_stamp(
+        self, db: aiosqlite.Connection, user_id: str
+    ) -> Optional[float]:
+        cursor = await db.execute(
+            "SELECT last_request_at FROM rate_limits WHERE user_id = ?", (user_id,)
+        )
+        row = await cursor.fetchone()
+        return float(row[0]) if row else None
+
+    async def _stamp(self, db: aiosqlite.Connection, user_id: str, now: float) -> None:
+        await db.execute(
+            """
+            INSERT INTO rate_limits (user_id, last_request_at) VALUES (?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET last_request_at = excluded.last_request_at
+            """,
+            (user_id, now),
+        )
+        # ponytail: prune is an unindexed O(n) scan of rate_limits, which stays
+        # bounded to participants active in the last 2x cooldown (~seconds of
+        # rows). Add an index on last_request_at if the user count ever grows
+        # past thousands.
+        await db.execute(
+            "DELETE FROM rate_limits WHERE last_request_at < ?",
+            (now - (self.cooldown_seconds * 2),),
+        )
 
 
 _global_limiter: Optional[SlidingWindowRateLimiter] = None

@@ -5,12 +5,15 @@ Unit and integration tests for Issue #24:
 Tasks verified:
 1. Top-level try ... except Exception as e: block in /api/chat catching unexpected
    fatal crashes and logging with logger.exception("FATAL_CHAT_CRASH", exc_info=True).
-2. Explicit timeout=8.0 configured on AsyncOpenAI client and completion calls.
+2. Explicit timeout=8.0 (connect=3.0s) plus explicit httpx pool limits
+   configured on the AsyncOpenAI client and completion calls (Issue #41).
 3. Pre-flight log line at sentence 1 of /api/chat:
    logger.info("chat_endpoint_hit", user_id=req.user_id, prompt_len=len(req.prompt))
    before redaction, database access, or cooldown logic runs.
 4. ArenaLogger support for direct kwargs (user_id=..., prompt_len=...).
 5. Standard HTTPExceptions (400, 404, 429, 502) are preserved and not masked.
+6. Issue #41 circuit breaker: three consecutive upstream 503/504s open the
+   circuit and further requests fail fast with a friendly HTTP 503.
 """
 
 import asyncio
@@ -25,6 +28,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 import httpx
+import openai
 
 from app.config import Settings, get_settings
 from app.database import get_db_context, init_db
@@ -36,7 +40,11 @@ from app.logger import (
 )
 from app.main import app
 from app.rate_limiter import SlidingWindowRateLimiter, get_rate_limiter
-from app.routes.chat import get_groq_client
+from app.routes.chat import (
+    UPSTREAM_BREAKER,
+    UpstreamCircuitBreaker,
+    get_groq_client,
+)
 
 
 class TestChatExceptionHandling(unittest.TestCase):
@@ -93,9 +101,13 @@ class TestChatExceptionHandling(unittest.TestCase):
         )
         app.dependency_overrides[get_rate_limiter] = lambda: self.test_limiter
 
+        # The breaker is process-wide state: never inherit an open circuit.
+        UPSTREAM_BREAKER.reset()
+
         self.client = TestClient(app)
 
     def tearDown(self):
+        UPSTREAM_BREAKER.reset()
         app.dependency_overrides.clear()
         clear_recent_errors()
         for path in [self.temp_db.name, f"{self.temp_db.name}-wal", f"{self.temp_db.name}-shm", self.temp_log.name]:
@@ -106,14 +118,18 @@ class TestChatExceptionHandling(unittest.TestCase):
                     pass
 
     def test_client_provider_has_explicit_timeout(self):
-        """get_groq_client must initialize AsyncOpenAI with explicit timeout=8.0."""
+        """Issue #41: get_groq_client must pin timeout=8.0/connect=3.0 and explicit pool bounds."""
         settings = Settings(
             GROQ_API_KEY="gsk_dummy_test_key_12345",
             GROQ_BASE_URL="https://api.groq.com/openai/v1",
         )
         client = get_groq_client(settings)
-        # Verify client timeout is set to 8.0s on the underlying client
-        self.assertEqual(client.timeout, httpx.Timeout(8.0))
+        # Verify client timeout is set to 8.0s (3.0s connect) on the underlying client
+        self.assertEqual(client.timeout, httpx.Timeout(8.0, connect=3.0))
+        # httpx stores the pool limits on the connection pool, not on the client.
+        pool = client._client._transport._pool
+        self.assertEqual(pool._max_connections, 250)
+        self.assertEqual(pool._max_keepalive_connections, 100)
 
     def test_preflight_logging_on_chat_endpoint_hit(self):
         """Sentence 1 of /api/chat must log chat_endpoint_hit before any validation runs."""
@@ -185,6 +201,103 @@ class TestChatExceptionHandling(unittest.TestCase):
         entries = [e for e in get_recent_errors()]
         # Verify no crash occurred and logger function completes successfully
         self.assertIsNotNone(entries)
+
+    def test_circuit_breaker_fails_fast_after_three_upstream_503s(self):
+        """Issue #41: 3 consecutive 503/504s open the circuit; the 4th request never leaves the process."""
+        upstream_error = openai.APIStatusError(
+            "upstream unavailable",
+            response=httpx.Response(
+                503,
+                request=httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions"),
+            ),
+            body=None,
+        )
+        create_mock = AsyncMock(side_effect=upstream_error)
+        self.mock_groq.chat.completions.create = create_mock
+
+        for _ in range(UpstreamCircuitBreaker.THRESHOLD):
+            resp = self.client.post(
+                "/api/chat",
+                json={"user_id": "usr_crash_test", "prompt": "hello provider"},
+            )
+            # Existing contract: upstream failures surface as 502, unpenalised.
+            self.assertEqual(resp.status_code, 502)
+
+        self.assertEqual(create_mock.await_count, UpstreamCircuitBreaker.THRESHOLD)
+
+        # Circuit is open: friendly banner, no provider call, no cooldown consumed.
+        resp = self.client.post(
+            "/api/chat",
+            json={"user_id": "usr_crash_test", "prompt": "must not reach provider"},
+        )
+        self.assertEqual(resp.status_code, 503)
+        self.assertIn("retry", resp.json()["detail"].lower())
+        self.assertIn("Retry-After", resp.headers)
+        self.assertEqual(create_mock.await_count, UpstreamCircuitBreaker.THRESHOLD)
+
+
+class TestUpstreamCircuitBreaker(unittest.TestCase):
+    """Unit tests for the Issue #41 circuit-breaker state machine (simulated clock)."""
+
+    def setUp(self):
+        clear_recent_errors()
+        self.now = 1000.0
+        self.breaker = UpstreamCircuitBreaker(time_func=lambda: self.now)
+
+    def tearDown(self):
+        clear_recent_errors()
+
+    def test_opens_after_three_consecutive_503s(self):
+        """Three consecutive upstream 503/504s must open the circuit."""
+        for _ in range(UpstreamCircuitBreaker.THRESHOLD - 1):
+            self.breaker.record_failure(503)
+            self.breaker.check()  # still closed
+
+        self.breaker.record_failure(504)
+        with self.assertRaises(HTTPException) as ctx:
+            self.breaker.check()
+        self.assertEqual(ctx.exception.status_code, 503)
+        self.assertIn("Retry-After", ctx.exception.headers)
+        self.assertIn("retry", ctx.exception.detail.lower())
+
+    def test_other_outcomes_reset_the_consecutive_streak(self):
+        """Only 503/504 count; anything else breaks the consecutive streak."""
+        self.breaker.record_failure(503)
+        self.breaker.record_failure(504)
+        self.breaker.record_failure(502)  # not 503/504 -> streak resets
+        self.breaker.record_failure(503)
+        self.breaker.record_failure(504)
+        self.breaker.check()  # only two since the reset -> still closed
+        self.breaker.record_failure(504)
+        with self.assertRaises(HTTPException):
+            self.breaker.check()
+
+    def test_success_closes_the_circuit(self):
+        """A normal provider response closes an open circuit."""
+        for _ in range(UpstreamCircuitBreaker.THRESHOLD):
+            self.breaker.record_failure(503)
+        self.breaker.record_success()
+        self.breaker.check()  # must not raise
+
+    def test_half_open_after_cooldown_admits_a_probe_then_reopens(self):
+        """After the cooldown one probe goes through; a failed probe re-opens."""
+        for _ in range(UpstreamCircuitBreaker.THRESHOLD):
+            self.breaker.record_failure(503)
+        with self.assertRaises(HTTPException):
+            self.breaker.check()
+
+        # Cooldown elapsed -> half-open: the next request may probe upstream.
+        self.now += UpstreamCircuitBreaker.COOLDOWN_SECONDS + 1.0
+        self.breaker.check()
+
+        # Failed probe re-opens immediately (streak never reset).
+        self.breaker.record_failure(503)
+        with self.assertRaises(HTTPException):
+            self.breaker.check()
+
+        # Successful probe closes it for good.
+        self.breaker.record_success()
+        self.breaker.check()
 
 
 if __name__ == "__main__":

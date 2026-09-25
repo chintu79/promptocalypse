@@ -13,7 +13,7 @@ References:
 
 import asyncio
 import time
-from typing import Annotated, Any
+from typing import Annotated, Any, Callable, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
@@ -65,16 +65,104 @@ async def mock_llm_completion(level: int) -> str:
     return MOCK_LLM_RESPONSES.get(level, MOCK_LLM_DEFAULT_RESPONSE)
 
 
+# ---------------------------------------------------------------------------
+# Shared HTTP transport & upstream circuit breaker (Issue #41)
+# ---------------------------------------------------------------------------
+
+# Explicit pool bounds: a fresh client per request leaves one unbound socket
+# per request, so a slow upstream stacks hundreds of them against the process.
+LLM_TIMEOUT = httpx.Timeout(8.0, connect=3.0)
+LLM_POOL_LIMITS = httpx.Limits(max_keepalive_connections=100, max_connections=250)
+
+# One transport per process: keep-alive reuse and the pool bounds above only
+# bind if every request goes through the same client.
+_shared_http_client: Optional[httpx.AsyncClient] = None
+
+
+class UpstreamCircuitBreaker:
+    """
+    Fail fast while the LLM provider is failing (Issue #41).
+
+    Three consecutive upstream 503/504 responses open the circuit: further
+    requests are rejected immediately with a friendly HTTP 503 banner instead
+    of waiting out the 8-second upstream timeout. After COOLDOWN_SECONDS the
+    circuit goes half-open so the next request can probe the provider and
+    close it again on success.
+
+    State is deliberately per worker process: unlike rate limiting there is no
+    bypass risk here - each worker just stops hammering a dead upstream.
+    """
+
+    THRESHOLD = 3
+    COOLDOWN_SECONDS = 30.0
+
+    def __init__(self, time_func: Callable[[], float] = time.monotonic) -> None:
+        self.time_func = time_func
+        self._consecutive: int = 0
+        self._open_until: Optional[float] = None
+
+    def check(self) -> None:
+        """Raise HTTPException(503) while the circuit is open."""
+        if self._open_until is None:
+            return
+        remaining = self._open_until - self.time_func()
+        if remaining > 0:
+            retry_after = max(1, int(remaining))
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    "The AI provider is overloaded right now. "
+                    f"Please retry in ~{retry_after}s - your prompt was not counted."
+                ),
+                headers={"Retry-After": str(retry_after)},
+            )
+        # Cooldown elapsed: half-open, let the next request probe the provider.
+        self._open_until = None
+
+    def record_success(self) -> None:
+        """Close the circuit: the provider answered normally."""
+        self._consecutive = 0
+        self._open_until = None
+
+    def record_failure(self, upstream_status: Optional[int]) -> None:
+        """Count consecutive upstream 503/504s; any other outcome resets the streak."""
+        if upstream_status not in (503, 504):
+            self._consecutive = 0
+            return
+        self._consecutive += 1
+        if self._consecutive >= self.THRESHOLD:
+            if self._open_until is None:
+                logger.warning(
+                    "Upstream circuit breaker opened",
+                    extra={"event": "upstream_breaker_open"},
+                )
+            self._open_until = self.time_func() + self.COOLDOWN_SECONDS
+
+    def reset(self) -> None:
+        """Clear all breaker state (test isolation)."""
+        self._consecutive = 0
+        self._open_until = None
+
+
+UPSTREAM_BREAKER = UpstreamCircuitBreaker()
+
+
 def get_groq_client(
     settings: Annotated[Settings, Depends(get_settings)]
 ) -> openai.AsyncOpenAI:
-    """Dependency provider for AsyncOpenAI client with explicit timeout and provider base_url."""
+    """Dependency provider for AsyncOpenAI bound to the shared connection pool (Issue #41)."""
+    global _shared_http_client
+    # A caller closing its wrapper tears the shared transport down; rebuild it.
+    if _shared_http_client is None or _shared_http_client.is_closed:
+        _shared_http_client = httpx.AsyncClient(
+            timeout=LLM_TIMEOUT,
+            limits=LLM_POOL_LIMITS,
+        )
     config = get_llm_config(settings)
-    http_client = httpx.AsyncClient(timeout=8.0)
     return openai.AsyncOpenAI(
         base_url=config["base_url"],
         api_key=config["api_key"],
-        http_client=http_client,
+        http_client=_shared_http_client,
     )
 
 
@@ -107,7 +195,9 @@ async def chat(
     Execute a user prompt against the target LLM for their current challenge level.
 
     Processing pipeline:
-    1. Pre-flight log: Immediate trace before cooldown, validation, or inference.
+    1. Pre-flight log & circuit breaker: Immediate trace before cooldown,
+       validation, or inference; while the upstream circuit is open (Issue #41)
+       requests fail fast here with HTTP 503 instead of waiting on the provider.
     2. Cooldown check: Atomically stamp the shared cooldown window and reject
        requests arriving within < 3.0s with HTTP 429 (Issue #40).
     3. Session validation: Ensure participant exists and arena run is active.
@@ -130,6 +220,10 @@ async def chat(
             user_id=request.user_id,
             prompt_len=len(request.prompt),
         )
+
+        # Fail fast while the upstream circuit is open (Issue #41), before the
+        # cooldown is stamped so a provider outage never penalises participants.
+        UPSTREAM_BREAKER.check()
 
         # Start total processing timer
         total_start = time.perf_counter()
@@ -265,11 +359,12 @@ async def chat(
                     ],
                     temperature=settings.LLM_TEMPERATURE,
                     max_tokens=settings.MAX_TOKENS,
-                    timeout=8.0,
+                    timeout=LLM_TIMEOUT,
                 )
                 raw_reply = response.choices[0].message.content or ""
         except Exception as e:
             # Upstream error/timeout: user prompt count is NOT penalized
+            UPSTREAM_BREAKER.record_failure(getattr(e, "status_code", None))
             await limiter.reset(request.user_id)
             upstream_latency_ms = int((time.perf_counter() - upstream_start) * 1000)
             total_latency_ms = int((time.perf_counter() - total_start) * 1000)
@@ -296,6 +391,9 @@ async def chat(
             )
 
         upstream_latency_ms = int((time.perf_counter() - upstream_start) * 1000)
+
+        # The provider answered normally: close the upstream circuit (Issue #41).
+        UPSTREAM_BREAKER.record_success()
 
         # Step 5: Level 3 Egress Defense (Sanitize output tokens)
         if level == 3:

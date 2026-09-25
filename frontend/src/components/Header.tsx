@@ -225,7 +225,8 @@ export default function Header({ session: propSession, onToggleLeaderboard }: He
             padding: '0.3rem 0.6rem',
             display: 'flex',
             alignItems: 'center',
-            gap: '0.4rem'
+            gap: '0.4rem',
+            color: 'white'
           }}
         >
           <span className="hud-step__icon">🏆</span>

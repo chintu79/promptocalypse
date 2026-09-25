@@ -9,8 +9,8 @@ export default function SidePanel({ onVictory }: SidePanelProps) {
   return (
     <aside
       style={{
-        flex: '0 0 40%',
-        width: '40%',
+        flex: '0 0 20%',
+        width: '20%',
         display: 'flex',
         flexDirection: 'column',
         gap: '1rem',

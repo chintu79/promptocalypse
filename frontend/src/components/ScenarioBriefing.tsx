@@ -21,15 +21,16 @@ export default function ScenarioBriefing({ currentLevel }: ScenarioBriefingProps
   }, [currentLevel]);
 
   return (
-    <div className={`scenario-briefing-banner ${glitch ? 'glitch-effect' : ''}`}>
+    <div className={`scenario-briefing ${glitch ? 'glitch-effect' : ''}`}>
+      <h3>MISSION BRIEFING - LEVEL {currentLevel}</h3>
       {data ? (
-        <span>
-          <strong>[LEVEL {currentLevel}]</strong> TARGET: {data.target} // VECTOR: {data.attack_vector} // {data.scenario}
-        </span>
+        <ul>
+          <li><strong>Target:</strong> {data.target}</li>
+          <li><strong>Scenario:</strong> {data.scenario}</li>
+          <li><strong>Attack Vector:</strong> {data.attack_vector}</li>
+        </ul>
       ) : (
-        <span>
-          <strong>[LEVEL {currentLevel}]</strong> Loading scenario data...
-        </span>
+        <p>Loading scenario data...</p>
       )}
     </div>
   );

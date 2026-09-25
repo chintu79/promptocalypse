@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { setActiveLevel } from '../api/client'
+import { setActiveLevel, fetchLeaderboard } from '../api/client'
 import { saveSession } from '../utils/session'
 import type { SessionState } from '../types'
 import {
@@ -15,9 +15,10 @@ import './Header.css'
 interface HeaderProps {
   /** Optional external session override (e.g. from parent state/context) */
   session?: SessionState | null
+  onToggleLeaderboard?: () => void
 }
 
-export default function Header({ session: propSession }: HeaderProps) {
+export default function Header({ session: propSession, onToggleLeaderboard }: HeaderProps) {
   // Load and recover session from localStorage (th_session_v1)
   const [internalSession, setInternalSession] = useState<SessionState>(() => {
     return propSession || loadSession() || getOrCreateDefaultSession()
@@ -63,6 +64,24 @@ export default function Header({ session: propSession }: HeaderProps) {
   const completed = Boolean(internalSession.completed)
   const totalPrompts = internalSession.total_prompts ?? 0
   const failedAttempts = internalSession.failed_attempts ?? 0
+
+  // ── User Rank Fetching ──
+  const [userRank, setUserRank] = useState<number | null>(null)
+  useEffect(() => {
+    if (!internalSession.username) return
+    const fetchRank = async () => {
+      try {
+        const board = await fetchLeaderboard()
+        const entry = board.find(b => b.username === internalSession.username)
+        if (entry) setUserRank(entry.rank)
+      } catch (e) {
+        // ignore errors
+      }
+    }
+    fetchRank()
+    const intv = setInterval(fetchRank, 30000)
+    return () => clearInterval(intv)
+  }, [internalSession.username])
 
   // ── Stopwatch Timer counting elapsed time from start_time ──
   const [elapsedSeconds, setElapsedSeconds] = useState<number>(() => {
@@ -143,7 +162,7 @@ export default function Header({ session: propSession }: HeaderProps) {
         )}
       </div>
 
-      {/* Segmented Step Indicator: Level 1, 2, 3 */}
+      {/* Segmented Step Indicator: Level 1, 2, 3 + Leaderboard Toggle */}
       <nav aria-label="Level Progress" className="hud-steps">
         {levels.map((lvl) => {
           const isCompleted = completed || clearedLevels.includes(lvl)
@@ -191,10 +210,28 @@ export default function Header({ session: propSession }: HeaderProps) {
             </button>
           )
         })}
+
+        <button
+          type="button"
+          className="hud-step"
+          onClick={onToggleLeaderboard}
+          style={{ background: 'transparent', border: 'none', cursor: 'pointer', borderLeft: '1px solid var(--border)', marginLeft: '0.25rem', paddingLeft: '0.75rem' }}
+        >
+          <span className="hud-step__icon">🏆</span>
+          <span className="hud-step__label">Leaderboard</span>
+        </button>
       </nav>
 
       {/* Live Telemetry Bar */}
       <div className="hud-telemetry">
+        {/* User Rank */}
+        <div className="hud-metric">
+          <span className="hud-metric__label">RANK:</span>
+          <span className="hud-metric__value">
+            {userRank !== null ? `#${userRank}` : '--'}
+          </span>
+        </div>
+
         {/* Stopwatch Timer */}
         <div className="hud-metric">
           <span className="hud-metric__label">TIME:</span>

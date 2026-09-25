@@ -1,11 +1,17 @@
 import KeyVault from './KeyVault'
-import type { SubmitKeyResponse } from '../types'
+import ScenarioBriefing from './ScenarioBriefing'
+import type { SubmitKeyResponse, SessionState } from '../types'
+import { loadSession } from '../utils/session'
 
 interface SidePanelProps {
   onVictory?: (response: SubmitKeyResponse) => void
+  session?: SessionState | null
 }
 
-export default function SidePanel({ onVictory }: SidePanelProps) {
+export default function SidePanel({ onVictory, session }: SidePanelProps) {
+  const currentSession = session ?? loadSession()
+  const currentLevel = currentSession?.active_level || 1
+
   return (
     <aside
       style={{
@@ -19,6 +25,9 @@ export default function SidePanel({ onVictory }: SidePanelProps) {
         overflowY: 'auto',
       }}
     >
+      {/* Level Info */}
+      <ScenarioBriefing currentLevel={currentLevel} />
+
       {/* Mission objective card */}
       <div
         style={{

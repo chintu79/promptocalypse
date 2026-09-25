@@ -17,11 +17,17 @@ export default function RightDrawer({ open, onToggle }: RightDrawerProps) {
 
   useEffect(() => {
     if (!open) return
-    fetchLeaderboard().then(setLeaderboard).catch(console.error)
-    const interval = setInterval(() => {
+    let timeoutId: ReturnType<typeof setTimeout>
+
+    const poll = () => {
       fetchLeaderboard().then(setLeaderboard).catch(console.error)
-    }, POLL_MS)
-    return () => clearInterval(interval)
+      const jitter = Math.random() * 5000
+      timeoutId = setTimeout(poll, POLL_MS + jitter)
+    }
+
+    poll()
+
+    return () => clearTimeout(timeoutId)
   }, [open])
 
   return (

@@ -9,6 +9,7 @@ References:
 - docs/FEATURES.md Phase 3 & Phase 4
 """
 
+import time
 from typing import Annotated
 from datetime import datetime, timezone
 
@@ -202,6 +203,9 @@ async def submit_key(request: SubmitKeyRequest, limiter: Annotated[KeySubmission
     )
 
 
+# Cache the JSON output in memory; only re-query SQLite once every 10 seconds
+_leaderboard_cache = {"timestamp": 0, "data": []}
+
 @router.get("/leaderboard", response_model=list[LeaderboardEntry])
 async def get_leaderboard() -> list[LeaderboardEntry]:
     """
@@ -215,6 +219,9 @@ async def get_leaderboard() -> list[LeaderboardEntry]:
     
     Concatenates the lists and dynamically assigns the rank integer iteratively.
     """
+    global _leaderboard_cache
+    if time.time() - _leaderboard_cache["timestamp"] < 10:
+        return _leaderboard_cache["data"]
     async with get_db_context() as db:
         # Tier 1: Completed
         cursor1 = await db.execute(
@@ -270,7 +277,7 @@ async def get_leaderboard() -> list[LeaderboardEntry]:
                 status="Completed" if completed else "In Progress"
             )
         )
-
+    _leaderboard_cache = {"timestamp": time.time(), "data": entries}
     return entries
 
 

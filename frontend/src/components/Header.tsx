@@ -78,9 +78,14 @@ export default function Header({ session: propSession, onToggleLeaderboard }: He
         // ignore errors
       }
     }
-    fetchRank()
-    const intv = setInterval(fetchRank, 30000)
-    return () => clearInterval(intv)
+    let timeoutId: ReturnType<typeof setTimeout>
+    const poll = async () => {
+      await fetchRank()
+      const jitter = Math.random() * 5000
+      timeoutId = setTimeout(poll, 30000 + jitter)
+    }
+    poll()
+    return () => clearTimeout(timeoutId)
   }, [internalSession.username])
 
   // ── Stopwatch Timer counting elapsed time from start_time ──

@@ -55,7 +55,7 @@ export default function RightDrawer({ open, onToggle }: RightDrawerProps) {
                     {entry.status || (entry.completed ? 'Completed' : 'In Progress')}
                   </span>
                 </span>
-                <span>{entry.final_score ?? entry.score} pts</span>
+                <span>{entry.final_score} pts</span>
               </li>
             ))}
           </ul>

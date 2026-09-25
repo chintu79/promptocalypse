@@ -121,7 +121,7 @@ describe('Cyberpunk HUD & Session Logic', () => {
       const sampleSession: SessionState = {
         user_id: 'usr_abc123',
         username: 'CyberRunner',
-        current_level: 2,
+        active_level: 2,
         start_time: '2026-09-24T10:00:00.000Z',
         total_prompts: 5,
         failed_attempts: 1,
@@ -135,7 +135,7 @@ describe('Cyberpunk HUD & Session Logic', () => {
       if (loaded) {
         assert.equal(loaded.user_id, 'usr_abc123')
         assert.equal(loaded.username, 'CyberRunner')
-        assert.equal(loaded.current_level, 2)
+        assert.equal(loaded.active_level, 2)
         assert.equal(loaded.total_prompts, 5)
         assert.equal(loaded.failed_attempts, 1)
         assert.equal(loaded.completed, false)
@@ -152,7 +152,7 @@ describe('Cyberpunk HUD & Session Logic', () => {
       clearSession()
       const session = getOrCreateDefaultSession()
       assert.ok(session)
-      assert.equal(session.current_level, 1)
+      assert.equal(session.active_level, 1)
       assert.equal(session.total_prompts, 0)
       assert.ok(session.start_time)
       assert.ok(session.user_id.startsWith('usr_'))
@@ -170,7 +170,7 @@ describe('Cyberpunk HUD & Session Logic', () => {
       saveSession({
         user_id: 'usr_guest',
         username: 'GhostRunner',
-        current_level: 1,
+        active_level: 1,
       })
       assert.equal(hasValidSession(), false)
 
@@ -179,7 +179,7 @@ describe('Cyberpunk HUD & Session Logic', () => {
         user_id: 'usr_real',
         username: 'RealUser',
         email: 'real@domain.com',
-        current_level: 1,
+        active_level: 1,
       })
       assert.equal(hasValidSession(), true)
     })

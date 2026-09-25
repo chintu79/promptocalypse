@@ -2,7 +2,8 @@ export interface User {
   user_id: string;
   username: string;
   email?: string;
-  current_level: number;
+  active_level: number
+  cleared_levels: number[];
   start_time: string;
   total_total_prompts: number;
   failed_attempts: number;
@@ -25,7 +26,8 @@ export interface ChatMessage {
 export interface LeaderboardEntry {
   rank: number;
   username: string;
-  current_level: number;
+  active_level: number
+  cleared_levels: number[];
   final_score: number;
   total_prompts: number;
   total_chars: number;
@@ -37,7 +39,8 @@ export interface SessionState {
   user_id: string;
   username: string;
   email?: string;
-  current_level: number;
+  active_level: number
+  cleared_levels: number[];
   active_cooldown_until?: number | null;
   local_chat_history?: Record<string, ChatMessage[]>;
   start_time?: string;
@@ -52,6 +55,7 @@ export interface SessionState {
 export interface SubmitKeyResponse {
   status: 'correct' | 'incorrect' | 'completed' | string;
   unlocked_level?: number;
+  cleared_levels?: number[];
   message: string;
   penalty_points?: number;
   final_score?: number;

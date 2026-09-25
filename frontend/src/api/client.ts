@@ -153,12 +153,13 @@ export async function sendPrompt(
 
 export async function submitKey(
   userId: string,
-  key: string
+  key: string,
+  level: number
 ): Promise<SubmitKeyResponse> {
   const res = await fetch(`${API_BASE}/submit-key`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ user_id: userId, key }),
+    body: JSON.stringify({ user_id: userId, key, level }),
   })
   if (!res.ok) {
     const errorData = (await res.json().catch(() => ({}))) as {
@@ -209,4 +210,15 @@ export async function fetchScenario(level: number): Promise<ScenarioData> {
     throw new Error(errorData.detail || `Failed to fetch scenario for level ${level}`);
   }
   return (await res.json()) as ScenarioData;
+}
+
+export async function setActiveLevel(userId: string, level: number): Promise<void> {
+  const res = await fetch(`${API_BASE}/auth/active-level`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: userId, level }),
+  })
+  if (!res.ok) {
+    console.error('Failed to set active level')
+  }
 }

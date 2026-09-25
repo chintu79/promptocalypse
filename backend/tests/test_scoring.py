@@ -16,7 +16,7 @@ from app.config import get_settings
 from app.database import get_db_context, init_db
 from app.main import app
 from app.scoring import (
-    BASE_SCORE,
+    BASE_SCORE_PER_LEVEL,
     FAILED_KEY_PENALTY,
     STATUS_ALREADY_COMPLETED,
     STATUS_COMPLETED,
@@ -72,7 +72,7 @@ class TempDbMixin:
             await db.execute(
                 """
                 INSERT INTO users (
-                    id, username, current_level, start_time, completed_at,
+                    id, username, active_level, start_time, completed_at,
                     total_prompts, total_chars, failed_attempts, final_score
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
@@ -115,8 +115,8 @@ class TestScoreFormula(unittest.TestCase):
     """S_final = max(0, 1000 - 15*max(0, P-3) - 2*T - 25*K)."""
 
     def test_perfect_run_scores_base(self):
-        self.assertEqual(calculate_final_score(0, 0, 0), float(BASE_SCORE))
-        self.assertEqual(calculate_final_score(3, 0, 0), float(BASE_SCORE))
+        self.assertEqual(calculate_final_score(0, 0, 0), float(BASE_SCORE_PER_LEVEL))
+        self.assertEqual(calculate_final_score(3, 3, 0, 0), float(BASE_SCORE_PER_LEVEL))
 
     def test_prompt_penalty_free_allowance(self):
         # 4 prompts -> 1 over the allowance -> -15
@@ -203,14 +203,14 @@ class TestVerifyAndProgress(TempDbMixin, unittest.IsolatedAsyncioTestCase):
 
     async def test_unknown_user_returns_not_found(self):
         async with get_db_context() as db:
-            result = await verify_and_progress(db, "usr_ghost", "FLAG{alpha_912}")
+            result = await verify_and_progress(db, "usr_ghost", 1, "FLAG{alpha_912}")
         self.assertEqual(result["status"], STATUS_NOT_FOUND)
 
     async def test_already_completed_rejected(self):
         now = utc_iso(datetime.now(timezone.utc))
         await self.seed_user(completed_at=now, final_score=800.0)
         async with get_db_context() as db:
-            result = await verify_and_progress(db, "usr_score_1", LEVEL_KEYS[1])
+            result = await verify_and_progress(db, "usr_score_1", 1, LEVEL_KEYS[1])
         self.assertEqual(result["status"], STATUS_ALREADY_COMPLETED)
         # No extra submission rows were written
         self.assertEqual(await self.fetch_submissions("usr_score_1"), [])
@@ -218,14 +218,14 @@ class TestVerifyAndProgress(TempDbMixin, unittest.IsolatedAsyncioTestCase):
     async def test_incorrect_key_increments_failures_and_logs(self):
         await self.seed_user(level=2)
         async with get_db_context() as db:
-            result = await verify_and_progress(db, "usr_score_1", "FLAG{wrong}")
+            result = await verify_and_progress(db, "usr_score_1", 2, "FLAG{wrong}")
         self.assertEqual(result["status"], STATUS_INCORRECT)
         self.assertEqual(result["unlocked_level"], 2)
         self.assertEqual(result["penalty_points"], FAILED_KEY_PENALTY)
 
         user = await self.fetch_user("usr_score_1")
         self.assertEqual(user["failed_attempts"], 1)
-        self.assertEqual(user["current_level"], 2)  # level unchanged
+        self.assertEqual(user["active_level"], 2)  # level unchanged
 
         subs = await self.fetch_submissions("usr_score_1")
         self.assertEqual(len(subs), 1)
@@ -236,7 +236,7 @@ class TestVerifyAndProgress(TempDbMixin, unittest.IsolatedAsyncioTestCase):
         await self.seed_user(level=1)
         async with get_db_context() as db:
             result = await verify_and_progress(
-                db, "usr_score_1", f"  {LEVEL_KEYS[1]}\n"
+                db, "usr_score_1", 1, f"  {LEVEL_KEYS[1]}\n"
             )
         self.assertEqual(result["status"], STATUS_CORRECT)
         self.assertEqual(result["unlocked_level"], 2)
@@ -244,13 +244,13 @@ class TestVerifyAndProgress(TempDbMixin, unittest.IsolatedAsyncioTestCase):
     async def test_correct_key_unlocks_next_level(self):
         await self.seed_user(level=1)
         async with get_db_context() as db:
-            result = await verify_and_progress(db, "usr_score_1", LEVEL_KEYS[1])
+            result = await verify_and_progress(db, "usr_score_1", 1, LEVEL_KEYS[1])
         self.assertEqual(result["status"], STATUS_CORRECT)
         self.assertEqual(result["unlocked_level"], 2)
         self.assertNotIn("final_score", result)
 
         user = await self.fetch_user("usr_score_1")
-        self.assertEqual(user["current_level"], 2)
+        self.assertEqual(user["active_level"], 2)
         self.assertIsNone(user["completed_at"])
         self.assertEqual(user["failed_attempts"], 0)
 
@@ -261,16 +261,16 @@ class TestVerifyAndProgress(TempDbMixin, unittest.IsolatedAsyncioTestCase):
     async def test_level_two_key_unlocks_level_three(self):
         await self.seed_user(level=2)
         async with get_db_context() as db:
-            result = await verify_and_progress(db, "usr_score_1", LEVEL_KEYS[2])
+            result = await verify_and_progress(db, "usr_score_1", 2, LEVEL_KEYS[2])
         self.assertEqual(result["status"], STATUS_CORRECT)
         self.assertEqual(result["unlocked_level"], 3)
-        self.assertEqual((await self.fetch_user("usr_score_1"))["current_level"], 3)
+        self.assertEqual((await self.fetch_user("usr_score_1"))["active_level"], 3)
 
     async def test_level_one_key_rejected_at_level_two(self):
         """A key from another level must not unlock the current level."""
         await self.seed_user(level=2)
         async with get_db_context() as db:
-            result = await verify_and_progress(db, "usr_score_1", LEVEL_KEYS[1])
+            result = await verify_and_progress(db, "usr_score_1", 1, LEVEL_KEYS[1])
         self.assertEqual(result["status"], STATUS_INCORRECT)
         self.assertEqual(
             (await self.fetch_user("usr_score_1"))["failed_attempts"], 1
@@ -287,7 +287,7 @@ class TestVerifyAndProgress(TempDbMixin, unittest.IsolatedAsyncioTestCase):
             failed_attempts=1,
         )
         async with get_db_context() as db:
-            result = await verify_and_progress(db, "usr_score_1", LEVEL_KEYS[3])
+            result = await verify_and_progress(db, "usr_score_1", 3, LEVEL_KEYS[3])
 
         self.assertEqual(result["status"], STATUS_COMPLETED)
         self.assertIn("final_score", result)
@@ -295,7 +295,7 @@ class TestVerifyAndProgress(TempDbMixin, unittest.IsolatedAsyncioTestCase):
 
         user = await self.fetch_user("usr_score_1")
         self.assertIsNotNone(user["completed_at"])
-        self.assertEqual(user["current_level"], 3)
+        self.assertEqual(user["active_level"], 3)
 
         # Recompute the expected score from the persisted user row
         minutes = elapsed_minutes(user["start_time"], user["completed_at"])
@@ -306,7 +306,7 @@ class TestVerifyAndProgress(TempDbMixin, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["final_score"], expected)
 
         stats = result["stats"]
-        self.assertEqual(stats["base_points"], BASE_SCORE)
+        self.assertEqual(stats["base_points"], BASE_SCORE_PER_LEVEL)
         self.assertEqual(stats["prompt_penalty"], 30)  # (5-3) * 15
         self.assertEqual(stats["fail_penalty"], 25)  # 1 * 25
         self.assertEqual(stats["final_score"], expected)
@@ -315,7 +315,7 @@ class TestVerifyAndProgress(TempDbMixin, unittest.IsolatedAsyncioTestCase):
         start = datetime.now(timezone.utc)
         await self.seed_user(level=3, start_time=utc_iso(start), total_prompts=2)
         async with get_db_context() as db:
-            result = await verify_and_progress(db, "usr_score_1", LEVEL_KEYS[3])
+            result = await verify_and_progress(db, "usr_score_1", 3, LEVEL_KEYS[3])
         self.assertEqual(result["status"], STATUS_COMPLETED)
         self.assertEqual(result["final_score"], 1000.0)
         self.assertEqual(
@@ -325,9 +325,9 @@ class TestVerifyAndProgress(TempDbMixin, unittest.IsolatedAsyncioTestCase):
     async def test_every_attempt_is_audited(self):
         await self.seed_user(level=1)
         async with get_db_context() as db:
-            await verify_and_progress(db, "usr_score_1", "nope")
-            await verify_and_progress(db, "usr_score_1", "still nope")
-            await verify_and_progress(db, "usr_score_1", LEVEL_KEYS[1])
+            await verify_and_progress(db, "usr_score_1", 1, "nope")
+            await verify_and_progress(db, "usr_score_1", 1, "still nope")
+            await verify_and_progress(db, "usr_score_1", 1, LEVEL_KEYS[1])
 
         subs = await self.fetch_submissions("usr_score_1")
         self.assertEqual(len(subs), 3)
@@ -360,7 +360,7 @@ class TestConcurrentSubmissions(TempDbMixin, unittest.IsolatedAsyncioTestCase):
 
         async def submit() -> dict:
             async with get_db_context() as db:
-                return await verify_and_progress(db, "usr_score_1", LEVEL_KEYS[1])
+                return await verify_and_progress(db, "usr_score_1", 1, LEVEL_KEYS[1])
 
         results = await asyncio.gather(submit(), submit())
 
@@ -370,7 +370,7 @@ class TestConcurrentSubmissions(TempDbMixin, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(statuses, [STATUS_CORRECT, STATUS_INCORRECT])
 
         user = await self.fetch_user("usr_score_1")
-        self.assertEqual(user["current_level"], 2)
+        self.assertEqual(user["active_level"], 2)
         self.assertEqual(user["failed_attempts"], 1)
 
         subs = await self.fetch_submissions("usr_score_1")
@@ -392,7 +392,7 @@ class TestConcurrentSubmissions(TempDbMixin, unittest.IsolatedAsyncioTestCase):
 
         async def submit() -> dict:
             async with get_db_context() as db:
-                return await verify_and_progress(db, "usr_score_1", LEVEL_KEYS[3])
+                return await verify_and_progress(db, "usr_score_1", 3, LEVEL_KEYS[3])
 
         results = await asyncio.gather(submit(), submit())
 
@@ -422,7 +422,7 @@ class TestConcurrentSubmissions(TempDbMixin, unittest.IsolatedAsyncioTestCase):
         async def submit(idx: int) -> dict:
             async with get_db_context() as db:
                 return await verify_and_progress(
-                    db, f"usr_par_{idx}", LEVEL_KEYS[1]
+                    db, f"usr_par_{idx}", 1, LEVEL_KEYS[1]
                 )
 
         results = await asyncio.gather(*(submit(i) for i in range(5)))
@@ -430,7 +430,7 @@ class TestConcurrentSubmissions(TempDbMixin, unittest.IsolatedAsyncioTestCase):
             self.assertEqual(result["status"], STATUS_CORRECT)
         for idx in range(5):
             self.assertEqual(
-                (await self.fetch_user(f"usr_par_{idx}"))["current_level"], 2
+                (await self.fetch_user(f"usr_par_{idx}"))["active_level"], 2
             )
 
 
@@ -483,7 +483,7 @@ class TestSubmitKeyEndpoint(TempDbMixin, unittest.TestCase):
     def test_unknown_user_returns_404(self):
         resp = self.client.post(
             "/api/submit-key",
-            json={"user_id": "usr_ghost", "key": LEVEL_KEYS[1]},
+            json={"user_id": "usr_ghost", "level": 1, "key": LEVEL_KEYS[1]},
         )
         self.assertEqual(resp.status_code, 404)
 
@@ -498,7 +498,7 @@ class TestSubmitKeyEndpoint(TempDbMixin, unittest.TestCase):
     def test_incorrect_key_returns_penalty(self):
         resp = self.client.post(
             "/api/submit-key",
-            json={"user_id": "usr_l1", "key": "FLAG{nope}"},
+            json={"user_id": "usr_l1", "level": 1, "key": "FLAG{nope}"},
         )
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
@@ -512,7 +512,7 @@ class TestSubmitKeyEndpoint(TempDbMixin, unittest.TestCase):
     def test_correct_key_unlocks_next_level(self):
         resp = self.client.post(
             "/api/submit-key",
-            json={"user_id": "usr_l1", "key": LEVEL_KEYS[1]},
+            json={"user_id": "usr_l1", "level": 1, "key": LEVEL_KEYS[1]},
         )
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
@@ -520,13 +520,13 @@ class TestSubmitKeyEndpoint(TempDbMixin, unittest.TestCase):
         self.assertEqual(data["unlocked_level"], 2)
         self.assertIsNone(data["final_score"])
         self.assertEqual(
-            asyncio.run(self.fetch_user("usr_l1"))["current_level"], 2
+            asyncio.run(self.fetch_user("usr_l1"))["active_level"], 2
         )
 
     def test_level_three_completion_returns_final_score(self):
         resp = self.client.post(
             "/api/submit-key",
-            json={"user_id": "usr_l3", "key": LEVEL_KEYS[3]},
+            json={"user_id": "usr_l3", "level": 3, "key": LEVEL_KEYS[3]},
         )
         self.assertEqual(resp.status_code, 200)
         data = resp.json()

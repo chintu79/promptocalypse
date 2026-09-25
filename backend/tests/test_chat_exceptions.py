@@ -63,7 +63,7 @@ class TestChatExceptionHandling(unittest.TestCase):
         async def seed():
             async with get_db_context() as db:
                 await db.execute(
-                    "INSERT INTO users (id, username, current_level, start_time) VALUES ('usr_crash_test', 'CrashUser', 1, ?)",
+                    "INSERT INTO users (id, username, active_level, start_time) VALUES ('usr_crash_test', 'CrashUser', 1, ?)",
                     (now_iso,),
                 )
                 await db.commit()
@@ -157,7 +157,7 @@ class TestChatExceptionHandling(unittest.TestCase):
             # Update user to level 2 to hit the patched function
             async def set_level_2():
                 async with get_db_context() as db:
-                    await db.execute("UPDATE users SET current_level = 2 WHERE id = 'usr_crash_test'")
+                    await db.execute("UPDATE users SET active_level = 2 WHERE id = 'usr_crash_test'")
                     await db.commit()
             asyncio.run(set_level_2())
 

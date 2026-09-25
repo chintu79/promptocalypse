@@ -9,7 +9,7 @@ interface KeyVaultProps {
   /** Optional callback fired when Level 3 is completed */
   onVictory?: (response: SubmitKeyResponse) => void
   /** Optional custom verification handler (e.g. for testing/mocking) */
-  onSubmitKey?: (userId: string, key: string) => Promise<SubmitKeyResponse>
+  onSubmitKey?: (userId: string, key: string, level: number) => Promise<SubmitKeyResponse>
 }
 
 export default function KeyVault({ onVictory, onSubmitKey }: KeyVaultProps) {
@@ -26,7 +26,7 @@ export default function KeyVault({ onVictory, onSubmitKey }: KeyVaultProps) {
 
   const session = loadSession() || getOrCreateDefaultSession()
   const isCompleted = Boolean(session.completed)
-  const currentLevel = session.current_level ?? 1
+  const currentLevel = session.active_level ?? 1
 
   const handleVerify = async () => {
     const trimmed = keyInput.trim()
@@ -37,7 +37,7 @@ export default function KeyVault({ onVictory, onSubmitKey }: KeyVaultProps) {
 
     try {
       const verifyFn = onSubmitKey || submitKey
-      const response = await verifyFn(session.user_id, trimmed)
+      const response = await verifyFn(session.user_id, trimmed, currentLevel)
 
       if (response.status === 'incorrect') {
         // Trigger 8-frame shake animation + 2s alert state
@@ -69,7 +69,7 @@ export default function KeyVault({ onVictory, onSubmitKey }: KeyVaultProps) {
         const nextLevel = response.unlocked_level ?? currentLevel + 1
         const updatedSession: SessionState = {
           ...session,
-          current_level: nextLevel,
+          active_level: nextLevel,
         }
         saveSession(updatedSession)
         setKeyInput('')
@@ -83,7 +83,7 @@ export default function KeyVault({ onVictory, onSubmitKey }: KeyVaultProps) {
 
         const updatedSession: SessionState = {
           ...session,
-          current_level: 3,
+          active_level: 3,
           completed: true,
           final_score: response.final_score,
         }

@@ -135,11 +135,11 @@ class TestChatRateLimiterIntegration(unittest.TestCase):
         async def seed():
             async with get_db_context() as db:
                 await db.execute(
-                    "INSERT INTO users (id, username, current_level, start_time) VALUES ('usr_rl_1', 'SpeedyUser', 1, ?)",
+                    "INSERT INTO users (id, username, active_level, start_time) VALUES ('usr_rl_1', 'SpeedyUser', 1, ?)",
                     (now_iso,),
                 )
                 await db.execute(
-                    "INSERT INTO users (id, username, current_level, start_time) VALUES ('usr_rl_2', 'CalmUser', 2, ?)",
+                    "INSERT INTO users (id, username, active_level, start_time) VALUES ('usr_rl_2', 'CalmUser', 2, ?)",
                     (now_iso,),
                 )
                 await db.commit()

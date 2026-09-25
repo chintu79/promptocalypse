@@ -60,7 +60,7 @@ export function loadSession(): SessionState | null {
     const raw = localStorage.getItem(SESSION_STORAGE_KEY)
     if (!raw) return null
     const parsed = JSON.parse(raw) as SessionState
-    if (parsed && typeof parsed.current_level === 'number') {
+    if (parsed && typeof parsed.active_level === 'number') {
       return parsed
     }
     return null
@@ -125,7 +125,7 @@ export function getOrCreateDefaultSession(): SessionState {
   const defaultSession: SessionState = {
     user_id: `usr_${Date.now()}`,
     username: 'GhostRunner',
-    current_level: 1,
+    active_level: 1,
     start_time: new Date().toISOString(),
     total_prompts: 0,
     failed_attempts: 0,

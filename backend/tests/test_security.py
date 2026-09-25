@@ -194,7 +194,7 @@ class TestSecurityDatabaseLedger(unittest.IsolatedAsyncioTestCase):
         async with get_db_context() as db:
             await db.execute(
                 """
-                INSERT INTO users (id, username, current_level, start_time)
+                INSERT INTO users (id, username, active_level, start_time)
                 VALUES ('usr_test_1', 'AgentAlpha', 2, ?)
                 """,
                 (now_iso,),
@@ -293,19 +293,19 @@ class TestChatEndpointIntegration(unittest.TestCase):
         async def seed():
             async with get_db_context() as db:
                 await db.execute(
-                    "INSERT INTO users (id, username, current_level, start_time) VALUES ('usr_lvl1', 'UserOne', 1, ?)",
+                    "INSERT INTO users (id, username, active_level, start_time) VALUES ('usr_lvl1', 'UserOne', 1, ?)",
                     (now_iso,),
                 )
                 await db.execute(
-                    "INSERT INTO users (id, username, current_level, start_time) VALUES ('usr_lvl2', 'UserTwo', 2, ?)",
+                    "INSERT INTO users (id, username, active_level, start_time) VALUES ('usr_lvl2', 'UserTwo', 2, ?)",
                     (now_iso,),
                 )
                 await db.execute(
-                    "INSERT INTO users (id, username, current_level, start_time) VALUES ('usr_lvl3', 'UserThree', 3, ?)",
+                    "INSERT INTO users (id, username, active_level, start_time) VALUES ('usr_lvl3', 'UserThree', 3, ?)",
                     (now_iso,),
                 )
                 await db.execute(
-                    "INSERT INTO users (id, username, current_level, start_time, completed_at) VALUES ('usr_done', 'UserDone', 3, ?, ?)",
+                    "INSERT INTO users (id, username, active_level, start_time, completed_at) VALUES ('usr_done', 'UserDone', 3, ?, ?)",
                     (now_iso, now_iso),
                 )
                 await db.commit()

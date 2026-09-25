@@ -1,4 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
+import { setActiveLevel } from '../api/client'
+import { saveSession } from '../utils/session'
 import type { SessionState } from '../types'
 import {
   calculateDynamicScore,
@@ -56,7 +58,8 @@ export default function Header({ session: propSession }: HeaderProps) {
     }
   }, [])
 
-  const currentLevel = internalSession.current_level ?? 1
+  const activeLevel = internalSession.active_level ?? 1
+  const clearedLevels = internalSession.cleared_levels ?? []
   const completed = Boolean(internalSession.completed)
   const totalPrompts = internalSession.total_prompts ?? 0
   const failedAttempts = internalSession.failed_attempts ?? 0
@@ -143,9 +146,9 @@ export default function Header({ session: propSession }: HeaderProps) {
       {/* Segmented Step Indicator: Level 1, 2, 3 */}
       <nav aria-label="Level Progress" className="hud-steps">
         {levels.map((lvl) => {
-          const isCompleted = completed || currentLevel > lvl
-          const isActive = !completed && currentLevel === lvl
-          const isLocked = !completed && currentLevel < lvl
+          const isCompleted = completed || clearedLevels.includes(lvl)
+          const isActive = !completed && activeLevel === lvl
+          const isLocked = !completed && !clearedLevels.includes(lvl) && activeLevel !== lvl
 
           let stepClass = 'hud-step'
           let icon = '🔒'
@@ -165,16 +168,27 @@ export default function Header({ session: propSession }: HeaderProps) {
             ariaStatus = 'Locked'
           }
 
+          const targetNames = ["RefundBot", "SysAdmin", "Blackout"]
           return (
-            <div
+            <button
               key={lvl}
               className={stepClass}
               title={`Level ${lvl}: ${ariaStatus}`}
               aria-current={isActive ? 'step' : undefined}
+              onClick={() => {
+                if (!completed && internalSession.user_id && activeLevel !== lvl) {
+                   setActiveLevel(internalSession.user_id, lvl)
+                   const updated = { ...internalSession, active_level: lvl }
+                   saveSession(updated)
+                   setInternalSession(updated)
+                }
+              }}
+              disabled={completed}
+              style={{ background: 'transparent', border: 'none', cursor: completed ? 'default' : 'pointer' }}
             >
               <span className="hud-step__icon">{icon}</span>
-              <span className="hud-step__label">LVL {lvl}</span>
-            </div>
+              <span className="hud-step__label">Target {lvl}: {targetNames[lvl - 1]}</span>
+            </button>
           )
         })}
       </nav>

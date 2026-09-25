@@ -3,7 +3,7 @@ Unit and integration tests for Issue #5:
 [Backend] Multi-Tier Leaderboard Endpoint (GET /api/leaderboard).
 
 Tasks verified:
-- Query top 50 users sorted by final_score DESC, current_level DESC,
+- Query top 50 users sorted by final_score DESC, active_level DESC,
   total_prompts ASC, total_chars ASC.
 - Return clean JSON array with calculated completion durations.
 """
@@ -67,7 +67,7 @@ class TestLeaderboardEndpointIntegration(unittest.TestCase):
                 # User 1: completed, highest score
                 await db.execute(
                     """INSERT INTO users
-                    (id, username, current_level, start_time, completed_at,
+                    (id, username, active_level, start_time, completed_at,
                      total_prompts, total_chars, final_score, failed_attempts)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
@@ -80,7 +80,7 @@ class TestLeaderboardEndpointIntegration(unittest.TestCase):
                 # User 2: completed, lower score
                 await db.execute(
                     """INSERT INTO users
-                    (id, username, current_level, start_time, completed_at,
+                    (id, username, active_level, start_time, completed_at,
                      total_prompts, total_chars, final_score, failed_attempts)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
@@ -93,7 +93,7 @@ class TestLeaderboardEndpointIntegration(unittest.TestCase):
                 # User 3: in progress, level 2, no score yet
                 await db.execute(
                     """INSERT INTO users
-                    (id, username, current_level, start_time,
+                    (id, username, active_level, start_time,
                      total_prompts, total_chars, final_score)
                     VALUES (?, ?, ?, ?, ?, ?, ?)""",
                     (
@@ -105,7 +105,7 @@ class TestLeaderboardEndpointIntegration(unittest.TestCase):
                 # User 4: same score as User 2 but fewer prompts -> rank higher
                 await db.execute(
                     """INSERT INTO users
-                    (id, username, current_level, start_time, completed_at,
+                    (id, username, active_level, start_time, completed_at,
                      total_prompts, total_chars, final_score, failed_attempts)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
@@ -118,7 +118,7 @@ class TestLeaderboardEndpointIntegration(unittest.TestCase):
                 # User 5: disqualified (should NOT appear in leaderboard)
                 await db.execute(
                     """INSERT INTO users
-                    (id, username, current_level, start_time,
+                    (id, username, active_level, start_time,
                      total_prompts, total_chars, final_score, is_disqualified)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
@@ -210,7 +210,7 @@ class TestLeaderboardEndpointIntegration(unittest.TestCase):
         resp = self.client.get("/api/leaderboard")
         data = resp.json()
         expected_keys = {
-            "rank", "username", "current_level", "completed",
+            "rank", "username", "active_level", "completed",
             "final_score", "total_prompts", "total_chars", "duration_seconds", "status",
         }
         for entry in data:
@@ -225,7 +225,7 @@ class TestLeaderboardEndpointIntegration(unittest.TestCase):
                 for i in range(55):
                     await db.execute(
                         """INSERT INTO users
-                        (id, username, current_level, start_time,
+                        (id, username, active_level, start_time,
                          total_prompts, total_chars, final_score)
                         VALUES (?, ?, ?, ?, ?, ?, ?)""",
                         (

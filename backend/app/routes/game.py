@@ -87,7 +87,7 @@ async def submit_key(request: SubmitKeyRequest, limiter: Annotated[KeySubmission
 
     async with get_db_context() as db:
         result = await verify_and_progress(
-            db=db, user_id=request.user_id, submitted_key=request.key
+            db=db, user_id=request.user_id, level=request.level, submitted_key=request.key
         )
 
     outcome = result["status"]

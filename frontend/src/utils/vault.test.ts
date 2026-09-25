@@ -46,7 +46,7 @@ describe('Key Submission Vault & Failure Logic', () => {
     const initialSession: SessionState = {
       user_id: 'usr_test1',
       username: 'TestAgent',
-      current_level: 1,
+      active_level: 1,
       failed_attempts: 0,
     }
     saveSession(initialSession)
@@ -74,11 +74,11 @@ describe('Key Submission Vault & Failure Logic', () => {
     assert.equal(reloaded.failed_attempts, 1)
   })
 
-  it('advances current_level upon correct intermediate key verification', () => {
+  it('advances active_level upon correct intermediate key verification', () => {
     const initialSession: SessionState = {
       user_id: 'usr_test2',
       username: 'TestAgent2',
-      current_level: 1,
+      active_level: 1,
     }
     saveSession(initialSession)
 
@@ -95,19 +95,19 @@ describe('Key Submission Vault & Failure Logic', () => {
     const current = loadSession()!
     const updated: SessionState = {
       ...current,
-      current_level: successPayload.unlocked_level,
+      active_level: successPayload.unlocked_level,
     }
     saveSession(updated)
 
     const reloaded = loadSession()!
-    assert.equal(reloaded.current_level, 2)
+    assert.equal(reloaded.active_level, 2)
   })
 
   it('marks run as completed with final score on Level 3 victory', () => {
     const initialSession: SessionState = {
       user_id: 'usr_test3',
       username: 'Victor',
-      current_level: 3,
+      active_level: 3,
       failed_attempts: 1,
       total_prompts: 6,
     }

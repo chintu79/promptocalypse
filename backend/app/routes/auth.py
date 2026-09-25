@@ -14,6 +14,11 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, status
 
 from app.database import get_db_context
+from pydantic import BaseModel
+class SetLevelRequest(BaseModel):
+    user_id: str
+    level: int
+
 from app.models import RegisterRequest, RegisterResponse
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -70,11 +75,19 @@ async def register(request: RegisterRequest) -> RegisterResponse:
                 await db.commit()
                 user_dict["email"] = clean_email
 
+            import json
+            cleared_levels_str = user_dict.get("cleared_levels", "[]")
+            try:
+                cleared_levels = json.loads(cleared_levels_str)
+            except Exception:
+                cleared_levels = []
+                
             return RegisterResponse(
                 user_id=user_dict["id"],
                 username=user_dict["username"],
                 email=user_dict.get("email"),
-                current_level=user_dict["current_level"],
+                active_level=user_dict["active_level"],
+                cleared_levels=cleared_levels,
                 start_time=user_dict["start_time"],
                 total_prompts=user_dict["total_prompts"],
                 failed_attempts=user_dict["failed_attempts"],
@@ -86,10 +99,10 @@ async def register(request: RegisterRequest) -> RegisterResponse:
         await db.execute(
             """
             INSERT INTO users (
-                id, username, email, current_level, start_time,
+                id, username, email, active_level, cleared_levels, start_time,
                 total_prompts, total_chars, failed_attempts,
                 final_score, is_disqualified
-            ) VALUES (?, ?, ?, 1, ?, 0, 0, 0, 0.0, 0)
+            ) VALUES (?, ?, ?, 1, '[]', ?, 0, 0, 0, 0.0, 0)
             """,
             (new_id, clean_username, clean_email, now_iso),
         )
@@ -99,9 +112,17 @@ async def register(request: RegisterRequest) -> RegisterResponse:
             user_id=new_id,
             username=clean_username,
             email=clean_email,
-            current_level=1,
+            active_level=1,
+            cleared_levels=[],
             start_time=now_iso,
             total_prompts=0,
             failed_attempts=0,
             completed=False,
         )
+
+@router.put("/active-level")
+async def set_active_level(request: SetLevelRequest):
+    async with get_db_context() as db:
+        await db.execute("UPDATE users SET active_level = ? WHERE id = ?", (request.level, request.user_id))
+        await db.commit()
+    return {"status": "ok"}

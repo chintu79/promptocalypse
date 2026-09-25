@@ -50,7 +50,7 @@ class TestAuthRegistration(unittest.TestCase):
         self.assertTrue(data["user_id"].startswith("usr_"))
         self.assertEqual(data["username"], "ZeroDay_Ninja")
         self.assertEqual(data["email"], "zeroday@example.com")
-        self.assertEqual(data["current_level"], 1)
+        self.assertEqual(data["active_level"], 1)
         self.assertFalse(data["completed"])
         self.assertIn("start_time", data)
 
@@ -82,7 +82,7 @@ class TestAuthRegistration(unittest.TestCase):
         async def level_up():
             async with get_db_context() as db:
                 await db.execute(
-                    "UPDATE users SET current_level = 2, total_prompts = 3 WHERE id = ?",
+                    "UPDATE users SET active_level = 2, total_prompts = 3 WHERE id = ?",
                     (user1["user_id"],),
                 )
                 await db.commit()
@@ -98,7 +98,7 @@ class TestAuthRegistration(unittest.TestCase):
         user2 = res2.json()
 
         self.assertEqual(user2["user_id"], user1["user_id"])
-        self.assertEqual(user2["current_level"], 2)
+        self.assertEqual(user2["active_level"], 2)
         self.assertEqual(user2["total_prompts"], 3)
         self.assertEqual(user2["email"], "alice@security.org")
 
@@ -125,7 +125,7 @@ class TestAuthRegistration(unittest.TestCase):
         self.assertEqual(state["user_id"], user_id)
         self.assertEqual(state["username"], "Bob_Admin")
         self.assertEqual(state["email"], "bob@arena.io")
-        self.assertEqual(state["current_level"], 1)
+        self.assertEqual(state["active_level"], 1)
 
     def test_get_user_state_not_found(self):
         """GET /api/user/state for non-existent user returns 404."""

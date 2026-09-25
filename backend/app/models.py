@@ -28,6 +28,7 @@ class ChatRequest(BaseModel):
 
 class SubmitKeyRequest(BaseModel):
     user_id: str = Field(..., description="Unique participant ID")
+    level: int = Field(..., description="The level this key is for")
     key: str = Field(..., description="Extracted secret flag key")
 
 
@@ -36,7 +37,8 @@ class RegisterResponse(BaseModel):
     user_id: str
     username: str
     email: Optional[str] = None
-    current_level: int = 1
+    active_level: int = 1
+    cleared_levels: list[int] = []
     start_time: str
     total_prompts: int = 0
     failed_attempts: int = 0

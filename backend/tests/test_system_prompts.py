@@ -114,7 +114,7 @@ class TestChatCompletionTemperatureIntegration(unittest.TestCase):
         async def seed():
             async with get_db_context() as db:
                 await db.execute(
-                    "INSERT INTO users (id, username, current_level, start_time) VALUES ('usr_prompt_test', 'PromptTester', 1, ?)",
+                    "INSERT INTO users (id, username, active_level, start_time) VALUES ('usr_prompt_test', 'PromptTester', 1, ?)",
                     (now_iso,),
                 )
                 await db.commit()

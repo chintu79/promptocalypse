@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     username TEXT NOT NULL COLLATE NOCASE,
     email TEXT NULL COLLATE NOCASE,
-    current_level INTEGER NOT NULL DEFAULT 1 CHECK(current_level BETWEEN 1 AND 3),
+    active_level INTEGER NOT NULL DEFAULT 1 CHECK(active_level BETWEEN 1 AND 3),
+    cleared_levels TEXT NOT NULL DEFAULT '[]',
     start_time TIMESTAMP NOT NULL,
     completed_at TIMESTAMP NULL,
     total_prompts INTEGER NOT NULL DEFAULT 0,
@@ -80,7 +81,7 @@ CREATE INDEX IF NOT EXISTS idx_users_email
 CREATE INDEX IF NOT EXISTS idx_leaderboard_rank
     ON users(
         final_score DESC,
-        current_level DESC,
+        active_level DESC,
         total_prompts ASC,
         total_chars ASC,
         completed_at ASC
@@ -170,11 +171,15 @@ async def init_db() -> None:
         await _apply_pragmas(db)
         await db.executescript(_CREATE_TABLES)
 
-        # Migration: Ensure email column exists if users table was created earlier
+        # Migration: Ensure new columns exist if users table was created earlier
         async with db.execute("PRAGMA table_info(users)") as cursor:
             columns = [row[1] for row in await cursor.fetchall()]
             if "email" not in columns:
                 await db.execute("ALTER TABLE users ADD COLUMN email TEXT NULL COLLATE NOCASE")
+            if "active_level" not in columns and "current_level" in columns:
+                await db.execute("ALTER TABLE users RENAME COLUMN current_level TO active_level")
+            if "cleared_levels" not in columns:
+                await db.execute("ALTER TABLE users ADD COLUMN cleared_levels TEXT NOT NULL DEFAULT '[]'")
 
         await db.executescript(_CREATE_INDEXES)
         await db.commit()

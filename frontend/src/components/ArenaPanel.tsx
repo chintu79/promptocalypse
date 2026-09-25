@@ -14,7 +14,7 @@ interface ArenaPanelProps {
 export default function ArenaPanel({ session }: ArenaPanelProps) {
   const currentSession = session ?? loadSession()
   const userId = currentSession?.user_id || ''
-  const currentLevel = currentSession?.current_level || 1
+  const currentLevel = currentSession?.active_level || 1
 
   const handleSendPrompt = async (prompt: string) => {
     if (!userId) {

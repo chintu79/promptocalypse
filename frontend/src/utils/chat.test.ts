@@ -194,7 +194,7 @@ describe('Chat Terminal State & LLM Response Rendering (Issue #32)', () => {
       const testSession: SessionState = {
         user_id: 'usr_chat_test',
         username: 'HackerOne',
-        current_level: 1,
+        active_level: 1,
       }
       saveSession(testSession)
 

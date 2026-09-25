@@ -152,7 +152,7 @@ class TestMockLlmModeChatEndpoint(unittest.TestCase):
                     ("usr_mock_3", "MockUserThree", 3),
                 ):
                     await db.execute(
-                        "INSERT INTO users (id, username, current_level, start_time) VALUES (?, ?, ?, ?)",
+                        "INSERT INTO users (id, username, active_level, start_time) VALUES (?, ?, ?, ?)",
                         (user_id, username, level, now_iso),
                     )
                 await db.commit()
@@ -318,7 +318,7 @@ class TestRealProviderPathPreserved(unittest.TestCase):
         async def seed():
             async with get_db_context() as db:
                 await db.execute(
-                    "INSERT INTO users (id, username, current_level, start_time) VALUES ('usr_real_1', 'RealUser', 1, ?)",
+                    "INSERT INTO users (id, username, active_level, start_time) VALUES ('usr_real_1', 'RealUser', 1, ?)",
                     (now_iso,),
                 )
                 await db.commit()

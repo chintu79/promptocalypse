@@ -242,15 +242,15 @@ class TestTelemetryIntegration(unittest.TestCase):
         async def seed():
             async with get_db_context() as db:
                 await db.execute(
-                    "INSERT INTO users (id, username, current_level, start_time) VALUES ('usr_tel_1', 'TelemetryUser1', 1, ?)",
+                    "INSERT INTO users (id, username, active_level, start_time) VALUES ('usr_tel_1', 'TelemetryUser1', 1, ?)",
                     (now_iso,),
                 )
                 await db.execute(
-                    "INSERT INTO users (id, username, current_level, start_time) VALUES ('usr_tel_2', 'TelemetryUser2', 2, ?)",
+                    "INSERT INTO users (id, username, active_level, start_time) VALUES ('usr_tel_2', 'TelemetryUser2', 2, ?)",
                     (now_iso,),
                 )
                 await db.execute(
-                    "INSERT INTO users (id, username, current_level, start_time) VALUES ('usr_tel_3', 'TelemetryUser3', 3, ?)",
+                    "INSERT INTO users (id, username, active_level, start_time) VALUES ('usr_tel_3', 'TelemetryUser3', 3, ?)",
                     (now_iso,),
                 )
                 await db.commit()

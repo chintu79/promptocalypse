@@ -162,65 +162,76 @@ export default function Header({ session: propSession, onToggleLeaderboard }: He
         )}
       </div>
 
-      {/* Segmented Step Indicator: Level 1, 2, 3 + Leaderboard Toggle */}
-      <nav aria-label="Level Progress" className="hud-steps">
-        {levels.map((lvl) => {
-          const isCompleted = completed || clearedLevels.includes(lvl)
-          const isActive = !completed && activeLevel === lvl
-          const isLocked = !completed && !clearedLevels.includes(lvl) && activeLevel !== lvl
+      {/* Center Cluster: Levels + Leaderboard */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+        <nav aria-label="Level Progress" className="hud-steps">
+          {levels.map((lvl) => {
+            const isCompleted = completed || clearedLevels.includes(lvl)
+            const isActive = !completed && activeLevel === lvl
+            const isLocked = !completed && !clearedLevels.includes(lvl) && activeLevel !== lvl
 
-          let stepClass = 'hud-step'
-          let icon = '🔒'
-          let ariaStatus = 'Locked'
+            let stepClass = 'hud-step'
+            let icon = '🔒'
+            let ariaStatus = 'Locked'
 
-          if (isCompleted) {
-            stepClass += ' hud-step--completed'
-            icon = '✓'
-            ariaStatus = 'Completed'
-          } else if (isActive) {
-            stepClass += ' hud-step--active'
-            icon = '●'
-            ariaStatus = 'Active'
-          } else if (isLocked) {
-            stepClass += ' hud-step--locked'
-            icon = '🔒'
-            ariaStatus = 'Locked'
-          }
+            if (isCompleted) {
+              stepClass += ' hud-step--completed'
+              icon = '✓'
+              ariaStatus = 'Completed'
+            } else if (isActive) {
+              stepClass += ' hud-step--active'
+              icon = '●'
+              ariaStatus = 'Active'
+            } else if (isLocked) {
+              stepClass += ' hud-step--locked'
+              icon = '🔒'
+              ariaStatus = 'Locked'
+            }
 
-          const targetNames = ["RefundBot", "SysAdmin", "Blackout"]
-          return (
-            <button
-              key={lvl}
-              className={stepClass}
-              title={`Level ${lvl}: ${ariaStatus}`}
-              aria-current={isActive ? 'step' : undefined}
-              onClick={() => {
-                if (!completed && internalSession.user_id && activeLevel !== lvl) {
-                   setActiveLevel(internalSession.user_id, lvl)
-                   const updated = { ...internalSession, active_level: lvl }
-                   saveSession(updated)
-                   setInternalSession(updated)
-                }
-              }}
-              disabled={completed}
-              style={{ background: 'transparent', border: 'none', cursor: completed ? 'default' : 'pointer' }}
-            >
-              <span className="hud-step__icon">{icon}</span>
-              <span className="hud-step__label">Target {lvl}: {targetNames[lvl - 1]}</span>
-            </button>
-          )
-        })}
+            const targetNames = ["RefundBot", "SysAdmin", "Blackout"]
+            return (
+              <button
+                key={lvl}
+                className={stepClass}
+                title={`Level ${lvl}: ${ariaStatus}`}
+                aria-current={isActive ? 'step' : undefined}
+                onClick={() => {
+                  if (!completed && internalSession.user_id && activeLevel !== lvl) {
+                     setActiveLevel(internalSession.user_id, lvl)
+                     const updated = { ...internalSession, active_level: lvl }
+                     saveSession(updated)
+                     setInternalSession(updated)
+                  }
+                }}
+                disabled={completed}
+                style={{ background: 'transparent', border: 'none', cursor: completed ? 'default' : 'pointer' }}
+              >
+                <span className="hud-step__icon">{icon}</span>
+                <span className="hud-step__label">Target {lvl}: {targetNames[lvl - 1]}</span>
+              </button>
+            )
+          })}
+        </nav>
 
         <button
           type="button"
           className="hud-step"
           onClick={onToggleLeaderboard}
-          style={{ background: 'transparent', border: 'none', cursor: 'pointer', borderLeft: '1px solid var(--border)', marginLeft: '0.25rem', paddingLeft: '0.75rem' }}
+          style={{ 
+            background: 'var(--bg-primary)', 
+            border: '1px solid var(--border)', 
+            borderRadius: '4px',
+            cursor: 'pointer', 
+            padding: '0.3rem 0.6rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem'
+          }}
         >
           <span className="hud-step__icon">🏆</span>
           <span className="hud-step__label">Leaderboard</span>
         </button>
-      </nav>
+      </div>
 
       {/* Live Telemetry Bar */}
       <div className="hud-telemetry">

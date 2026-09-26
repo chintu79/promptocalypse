@@ -9,7 +9,7 @@ A real-time web competition platform where participants act as red-teamers to ex
 | Frontend   | React 19 + Vite + TypeScript        |
 | Backend    | FastAPI (Python 3.10+) + Uvicorn    |
 | Database   | SQLite 3.37+ (WAL mode)            |
-| LLM        | Groq Cloud — `llama-3.1-8b-instant` |
+| LLM        | Groq Cloud (e.g. `qwen/qwen3.8-27b`) or OpenRouter (e.g. `meta-llama/llama-3.1-8b-instruct`) |
 | Tunnel     | Cloudflare Tunnel (optional)        |
 
 ## Project Structure
@@ -56,7 +56,7 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-# Edit .env with your Groq API key
+# Edit .env with your Groq or OpenRouter API key
 uvicorn app.main:app --reload --port 8000
 ```
 

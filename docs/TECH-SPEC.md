@@ -9,12 +9,12 @@
 
 ## 1. System Architecture & Component Interactions
 
-The AI Jailbreak Arena runs as an asynchronous decoupled architecture. The frontend application interacts directly with an API gateway (FastAPI) which proxies through to the inference provider (Groq) and manages transaction state in an embedded SQLite datastore with Write-Ahead Logging (WAL).
+The AI Jailbreak Arena runs as an asynchronous decoupled architecture. The frontend application interacts directly with an API gateway (FastAPI) which proxies through to the inference provider (Groq or OpenRouter) and manages transaction state in an embedded SQLite datastore with Write-Ahead Logging (WAL).
 
 ### 1.1 End-to-End Sequence Diagram
 
 ```
-Participant                FastAPI Gateway                SQLite (WAL)               Groq Cloud
+Participant                FastAPI Gateway                SQLite (WAL)               Groq Cloud / OpenRouter
     │                             │                            │                         │
     │─── 1. POST /api/chat ───────▶│                            │                         │
     │    {user_id, prompt}        │── 2. Check 3s Cooldown ────▶│                         │
@@ -410,7 +410,7 @@ The upstream model is invoked via `httpx` within an `AsyncOpenAI` client wrapper
 ### 6.1 Hyperparameters
 ```json
 {
-  "model": "llama-3.1-8b-instant",
+  "model": "qwen/qwen3.8-27b" (or any OpenRouter model),
   "temperature": 0.2,
   "top_p": 0.9,
   "max_tokens": 150,
@@ -431,7 +431,7 @@ The upstream model is invoked via `httpx` within an `AsyncOpenAI` client wrapper
 
 ### 6.3 Transient Error Handling & Retry Matrix
 * **HTTP 429 (Upstream Rate Limit):** Wait exponential backoff ($0.5\text{s}$, $1.0\text{s}$), max 2 retries.
-* **HTTP 500 / 503 (Groq Service Disruption):** Abort immediately. Return HTTP 502 to user. **Do not increment prompt ledger count** to avoid unfair penalties.
+* **HTTP 500 / 503 (Groq/OpenRouter Service Disruption):** Abort immediately. Return HTTP 502 to user. **Do not increment prompt ledger count** to avoid unfair penalties.
 * **Timeout Exception:** Abort request. Return generic connection alert: `{"detail": "Inference gateway timeout; prompt unbilled."}`
 * **Circuit Breaker (Issue #41):** after three consecutive upstream 503/504 responses the circuit opens - requests fail fast with HTTP 503 and a `Retry-After` header instead of waiting out the 8-second timeout, and half-open-probe the provider again after 30 seconds.
 
@@ -473,3 +473,35 @@ On document load (`DOMContentLoaded` / React `useEffect`):
    ```
 4. If backend responds with higher `current_level` (e.g., solved from another tab), state syncs forward automatically.
 5. If user completed the arena: Disable inputs and show **Victory Modal**.
+---
+
+## 8. Database Architecture & Persistence
+
+### 8.1 SQLite WAL Mode and Concurrency
+The application relies on SQLite configured with **Write-Ahead Logging (WAL)** to support concurrent reads alongside writes, vital for handling multiple simultaneous users without lock contention.
+* **PRAGMA configuration applied on startup:**
+  * `journal_mode = WAL`: Enables non-blocking concurrent readers.
+  * `synchronous = NORMAL`: Safely trades off fsync frequency for speed while maintaining crash resilience.
+  * `busy_timeout = 5000`: Waits up to 5 seconds for write-locks instead of failing immediately.
+  * `cache_size = -64000`: Allocates 64MB of in-memory page cache for fast lookups.
+
+---
+
+## 9. Telemetry & Observability
+
+### 9.1 JSON Logging Format & Redaction Pipeline
+The application uses structured JSON logging for all telemetry, output to stdout and rotating log files (`logs/arena_debug.log`).
+
+* **Format:** Single-line JSON objects, ensuring parseability by downstream log aggregators (e.g. DataDog, ELK).
+  ```json
+  {"timestamp": "2026-09-25T15:33:29.775Z", "level": "INFO", "message": "HTTP request completed", "event": "http_request", "method": "GET", "endpoint": "/api/leaderboard", "status_code": 200, "latency_ms": 1.25}
+  ```
+* **Redaction Pipeline:** A specialized filter intercepts all outgoing log records and scrubs sensitive data before serialization. It detects and replaces:
+  * Known API keys (e.g. `gsk_...`) with `[REDACTED_API_KEY]`
+  * Bearer tokens with `Bearer [REDACTED_TOKEN]`
+  * Specific dictionary keys (e.g., `authorization`, `password`, `secret`) with `[REDACTED]`
+
+### 9.2 In-Memory Error Ring Buffer
+To provide immediate observability into system health without needing direct access to file logs, an in-memory `RingBufferHandler` captures the most recent 50 `WARNING` and `ERROR` level logs.
+* **Access:** This buffer can be queried in real-time via the administrative endpoint `GET /api/admin/recent-errors`.
+* **Thread-Safety:** Backed by `collections.deque` and protected via `threading.RLock()` to prevent race conditions during high concurrency.

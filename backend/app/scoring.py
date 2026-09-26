@@ -69,10 +69,10 @@ def elapsed_minutes(start_time: str, end_time: str) -> int:
 # Score Calculation (TECH-SPEC.md §5.1)
 # ---------------------------------------------------------------------------
 #
-#   S_final = max(0, 1000 - 15 * max(0, P - 3) - 2 * T - 25 * K)
+#   S_final = max(0, 333 * C - 15 * max(0, P - 3) - 2 * T - 25 * K)
 #
-#   P = total prompts recorded, T = elapsed whole minutes,
-#   K = incorrect key submissions.
+#   C = levels cleared, P = total prompts recorded,
+#   T = elapsed whole minutes, K = incorrect key submissions.
 
 
 def calculate_final_score(
@@ -140,14 +140,14 @@ async def verify_and_progress(
     2. Arena already completed -> {"status": "already_completed"}
     3. Key mismatch            -> log submission, failed_attempts += 1,
                                   {"status": "incorrect", "penalty_points": 25}
-    4. Key correct, level < 3  -> log submission, current_level += 1,
-                                  {"status": "correct", "unlocked_level": n+1}
-    5. Key correct, level == 3 -> log submission, compute final score,
-                                  stamp completed_at,
+    4. Key correct              -> log submission, append level to
+                                  cleared_levels,
+                                  {"status": "correct", "unlocked_level": level}
+    5. All 3 levels cleared     -> compute final score, stamp completed_at,
                                   {"status": "completed", "final_score": ...}
 
     The BEGIN IMMEDIATE write-lock (busy_timeout=10000ms) serializes
-    concurrent submissions so level unlocks and scoring are atomic.
+    concurrent submissions so clearance updates and scoring are atomic.
     """
     clean_key = submitted_key.strip()
     now = datetime.now(timezone.utc)

@@ -215,7 +215,7 @@ async def get_leaderboard() -> list[LeaderboardEntry]:
     ordered by final_score DESC, total_prompts ASC, total_chars ASC.
     
     Tier 2 (Active): Fetch users where completed_at IS NULL
-    ordered by current_level DESC, total_prompts ASC, total_chars ASC.
+    ordered by active_level DESC, total_prompts ASC, total_chars ASC.
     
     Concatenates the lists and dynamically assigns the rank integer iteratively.
     """
@@ -227,7 +227,7 @@ async def get_leaderboard() -> list[LeaderboardEntry]:
         cursor1 = await db.execute(
             """
             SELECT
-                username, current_level, completed_at, start_time,
+                username, active_level, completed_at, start_time,
                 total_prompts, total_chars, final_score
             FROM users
             WHERE is_disqualified = 0 AND completed_at IS NOT NULL
@@ -241,11 +241,11 @@ async def get_leaderboard() -> list[LeaderboardEntry]:
         cursor2 = await db.execute(
             """
             SELECT
-                username, current_level, completed_at, start_time,
+                username, active_level, completed_at, start_time,
                 total_prompts, total_chars, final_score
             FROM users
             WHERE is_disqualified = 0 AND completed_at IS NULL
-            ORDER BY current_level DESC, total_prompts ASC, total_chars ASC
+            ORDER BY active_level DESC, total_prompts ASC, total_chars ASC
             LIMIT 50
             """
         )
@@ -268,7 +268,7 @@ async def get_leaderboard() -> list[LeaderboardEntry]:
             LeaderboardEntry(
                 rank=rank,
                 username=row["username"],
-                current_level=row["current_level"],
+                active_level=row["active_level"],
                 completed=completed,
                 final_score=row["final_score"],
                 total_prompts=row["total_prompts"],
@@ -303,7 +303,7 @@ async def get_user_state(
         user_id=user_dict["id"],
         username=user_dict["username"],
         email=user_dict.get("email"),
-        current_level=user_dict["current_level"],
+        active_level=user_dict["active_level"],
         start_time=user_dict["start_time"],
         completed_at=user_dict.get("completed_at"),
         total_prompts=user_dict["total_prompts"],

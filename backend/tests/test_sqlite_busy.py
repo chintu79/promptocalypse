@@ -93,7 +93,7 @@ class TestLedgerWriteOffCriticalPath(unittest.TestCase):
                     ("usr_busy_2", "BusyUserTwo", 2),
                 ):
                     await db.execute(
-                        "INSERT INTO users (id, username, current_level, start_time)"
+                        "INSERT INTO users (id, username, active_level, start_time)"
                         " VALUES (?, ?, ?, ?)",
                         (user_id, username, level, now_iso),
                     )

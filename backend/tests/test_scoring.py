@@ -6,6 +6,7 @@ atomic level progression, and final score computation.
 
 import asyncio
 from datetime import datetime, timedelta, timezone
+import json
 import os
 import tempfile
 import unittest
@@ -59,6 +60,7 @@ class TempDbMixin:
         user_id: str = "usr_score_1",
         username: str = "ScoreAgent",
         level: int = 1,
+        cleared_levels: list[int] | None = None,
         start_time: str | None = None,
         total_prompts: int = 0,
         total_chars: int = 0,
@@ -72,14 +74,16 @@ class TempDbMixin:
             await db.execute(
                 """
                 INSERT INTO users (
-                    id, username, active_level, start_time, completed_at,
-                    total_prompts, total_chars, failed_attempts, final_score
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    id, username, active_level, cleared_levels, start_time,
+                    completed_at, total_prompts, total_chars, failed_attempts,
+                    final_score
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     user_id,
                     username,
                     level,
+                    json.dumps(cleared_levels or []),
                     start,
                     completed_at,
                     total_prompts,
@@ -112,38 +116,44 @@ class TempDbMixin:
 
 
 class TestScoreFormula(unittest.TestCase):
-    """S_final = max(0, 1000 - 15*max(0, P-3) - 2*T - 25*K)."""
+    """S_final = max(0, 333*C - 15*max(0, P-3) - 2*T - 25*K), C = levels cleared."""
 
     def test_perfect_run_scores_base(self):
-        self.assertEqual(calculate_final_score(0, 0, 0), float(BASE_SCORE_PER_LEVEL))
-        self.assertEqual(calculate_final_score(3, 3, 0, 0), float(BASE_SCORE_PER_LEVEL))
+        self.assertEqual(calculate_final_score(0, 0, 0, 0), 0.0)
+        self.assertEqual(
+            calculate_final_score(1, 0, 0, 0), float(BASE_SCORE_PER_LEVEL)
+        )
+        self.assertEqual(
+            calculate_final_score(3, 3, 0, 0), float(3 * BASE_SCORE_PER_LEVEL)
+        )
 
     def test_prompt_penalty_free_allowance(self):
         # 4 prompts -> 1 over the allowance -> -15
-        self.assertEqual(calculate_final_score(4, 0, 0), 985.0)
+        self.assertEqual(calculate_final_score(3, 4, 0, 0), 984.0)
         # 10 prompts -> 7 over -> -105
-        self.assertEqual(calculate_final_score(10, 0, 0), 895.0)
+        self.assertEqual(calculate_final_score(3, 10, 0, 0), 894.0)
 
     def test_time_penalty_whole_minutes(self):
-        self.assertEqual(calculate_final_score(0, 1, 0), 998.0)
-        self.assertEqual(calculate_final_score(0, 30, 0), 940.0)
+        self.assertEqual(calculate_final_score(3, 0, 1, 0), 997.0)
+        self.assertEqual(calculate_final_score(3, 0, 30, 0), 939.0)
 
     def test_fail_penalty(self):
         self.assertEqual(
-            calculate_final_score(0, 0, 1), float(1000 - FAILED_KEY_PENALTY)
+            calculate_final_score(3, 0, 0, 1),
+            float(3 * BASE_SCORE_PER_LEVEL - FAILED_KEY_PENALTY),
         )
-        self.assertEqual(calculate_final_score(0, 0, 3), 925.0)
+        self.assertEqual(calculate_final_score(3, 0, 0, 3), 924.0)
 
     def test_combined_penalties(self):
-        # P=6 (->45), T=12 (->24), K=1 (->25): 1000-45-24-25 = 906
-        self.assertEqual(calculate_final_score(6, 12, 1), 906.0)
+        # C=3 (->999), P=6 (->45), T=12 (->24), K=1 (->25): 999-45-24-25 = 905
+        self.assertEqual(calculate_final_score(3, 6, 12, 1), 905.0)
 
     def test_score_clamped_at_zero(self):
-        self.assertEqual(calculate_final_score(100, 1000, 100), 0.0)
-        self.assertEqual(calculate_final_score(0, 0, 40), 0.0)
+        self.assertEqual(calculate_final_score(3, 100, 1000, 100), 0.0)
+        self.assertEqual(calculate_final_score(3, 0, 0, 40), 0.0)
 
     def test_score_is_never_negative(self):
-        self.assertGreaterEqual(calculate_final_score(9999, 9999, 9999), 0.0)
+        self.assertGreaterEqual(calculate_final_score(3, 9999, 9999, 9999), 0.0)
 
 
 class TestTimestampHelpers(unittest.TestCase):
@@ -239,18 +249,20 @@ class TestVerifyAndProgress(TempDbMixin, unittest.IsolatedAsyncioTestCase):
                 db, "usr_score_1", 1, f"  {LEVEL_KEYS[1]}\n"
             )
         self.assertEqual(result["status"], STATUS_CORRECT)
-        self.assertEqual(result["unlocked_level"], 2)
+        self.assertEqual(result["unlocked_level"], 1)
 
-    async def test_correct_key_unlocks_next_level(self):
+    async def test_correct_key_appends_to_cleared_levels(self):
         await self.seed_user(level=1)
         async with get_db_context() as db:
             result = await verify_and_progress(db, "usr_score_1", 1, LEVEL_KEYS[1])
         self.assertEqual(result["status"], STATUS_CORRECT)
-        self.assertEqual(result["unlocked_level"], 2)
+        self.assertEqual(result["unlocked_level"], 1)
+        self.assertEqual(result["cleared_levels"], [1])
         self.assertNotIn("final_score", result)
 
         user = await self.fetch_user("usr_score_1")
-        self.assertEqual(user["active_level"], 2)
+        self.assertEqual(user["active_level"], 1)  # free-select: viewing level unchanged
+        self.assertEqual(json.loads(user["cleared_levels"]), [1])
         self.assertIsNone(user["completed_at"])
         self.assertEqual(user["failed_attempts"], 0)
 
@@ -258,29 +270,32 @@ class TestVerifyAndProgress(TempDbMixin, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(subs), 1)
         self.assertEqual(subs[0]["is_correct"], 1)
 
-    async def test_level_two_key_unlocks_level_three(self):
+    async def test_level_two_key_records_clear_without_moving_active_level(self):
         await self.seed_user(level=2)
         async with get_db_context() as db:
             result = await verify_and_progress(db, "usr_score_1", 2, LEVEL_KEYS[2])
         self.assertEqual(result["status"], STATUS_CORRECT)
-        self.assertEqual(result["unlocked_level"], 3)
-        self.assertEqual((await self.fetch_user("usr_score_1"))["active_level"], 3)
+        self.assertEqual(result["unlocked_level"], 2)
+        user = await self.fetch_user("usr_score_1")
+        self.assertEqual(user["active_level"], 2)
+        self.assertEqual(json.loads(user["cleared_levels"]), [2])
 
     async def test_level_one_key_rejected_at_level_two(self):
-        """A key from another level must not unlock the current level."""
+        """A key from another level must not clear the submitted level."""
         await self.seed_user(level=2)
         async with get_db_context() as db:
-            result = await verify_and_progress(db, "usr_score_1", 1, LEVEL_KEYS[1])
+            result = await verify_and_progress(db, "usr_score_1", 2, LEVEL_KEYS[1])
         self.assertEqual(result["status"], STATUS_INCORRECT)
         self.assertEqual(
             (await self.fetch_user("usr_score_1"))["failed_attempts"], 1
         )
 
     async def test_level_three_completion_computes_final_score(self):
-        # Started 10 minutes ago, 5 prompts (2 over allowance), 1 failed attempt
+        # Started 10 min ago, levels 1-2 already cleared, 5 prompts, 1 fail
         start = datetime.now(timezone.utc) - timedelta(minutes=10)
         await self.seed_user(
             level=3,
+            cleared_levels=[1, 2],
             start_time=utc_iso(start),
             total_prompts=5,
             total_chars=400,
@@ -300,26 +315,29 @@ class TestVerifyAndProgress(TempDbMixin, unittest.IsolatedAsyncioTestCase):
         # Recompute the expected score from the persisted user row
         minutes = elapsed_minutes(user["start_time"], user["completed_at"])
         expected = calculate_final_score(
-            user["total_prompts"], minutes, user["failed_attempts"]
+            3, user["total_prompts"], minutes, user["failed_attempts"]
         )
         self.assertEqual(user["final_score"], expected)
         self.assertEqual(result["final_score"], expected)
 
         stats = result["stats"]
-        self.assertEqual(stats["base_points"], BASE_SCORE_PER_LEVEL)
+        self.assertEqual(stats["base_points"], 3 * BASE_SCORE_PER_LEVEL)
         self.assertEqual(stats["prompt_penalty"], 30)  # (5-3) * 15
         self.assertEqual(stats["fail_penalty"], 25)  # 1 * 25
         self.assertEqual(stats["final_score"], expected)
 
-    async def test_completion_with_no_penalties_scores_1000(self):
+    async def test_completion_with_no_penalties_scores_full_base(self):
         start = datetime.now(timezone.utc)
-        await self.seed_user(level=3, start_time=utc_iso(start), total_prompts=2)
+        await self.seed_user(
+            level=3, cleared_levels=[1, 2], start_time=utc_iso(start), total_prompts=2
+        )
         async with get_db_context() as db:
             result = await verify_and_progress(db, "usr_score_1", 3, LEVEL_KEYS[3])
         self.assertEqual(result["status"], STATUS_COMPLETED)
-        self.assertEqual(result["final_score"], 1000.0)
+        self.assertEqual(result["final_score"], float(3 * BASE_SCORE_PER_LEVEL))
         self.assertEqual(
-            (await self.fetch_user("usr_score_1"))["final_score"], 1000.0
+            (await self.fetch_user("usr_score_1"))["final_score"],
+            float(3 * BASE_SCORE_PER_LEVEL),
         )
 
     async def test_every_attempt_is_audited(self):
@@ -351,10 +369,10 @@ class TestConcurrentSubmissions(TempDbMixin, unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         self.teardown_db()
 
-    async def test_race_on_level_unlock_advances_exactly_once(self):
+    async def test_race_on_level_clear_records_exactly_once(self):
         """
         Two simultaneous correct submissions for the same level must not
-        double-advance the state machine (1 -> 2, not 1 -> 3).
+        double-record the clear (cleared_levels gains the level once).
         """
         await self.seed_user(level=1)
 
@@ -365,16 +383,17 @@ class TestConcurrentSubmissions(TempDbMixin, unittest.IsolatedAsyncioTestCase):
         results = await asyncio.gather(submit(), submit())
 
         statuses = sorted(r["status"] for r in results)
-        # The loser's identical key no longer matches once the level has
-        # moved on, so it lands as a failed attempt — never a double unlock.
-        self.assertEqual(statuses, [STATUS_CORRECT, STATUS_INCORRECT])
+        # The loser starts after the winner commits, so the level is already
+        # in cleared_levels and the duplicate is rejected before any audit row.
+        self.assertEqual(statuses, [STATUS_ALREADY_COMPLETED, STATUS_CORRECT])
 
         user = await self.fetch_user("usr_score_1")
-        self.assertEqual(user["active_level"], 2)
-        self.assertEqual(user["failed_attempts"], 1)
+        self.assertEqual(user["active_level"], 1)
+        self.assertEqual(json.loads(user["cleared_levels"]), [1])
+        self.assertEqual(user["failed_attempts"], 0)
 
         subs = await self.fetch_submissions("usr_score_1")
-        self.assertEqual(len(subs), 2)
+        self.assertEqual(len(subs), 1)
         self.assertEqual(sum(s["is_correct"] for s in subs), 1)
 
     async def test_race_on_final_completion_scores_exactly_once(self):
@@ -385,6 +404,7 @@ class TestConcurrentSubmissions(TempDbMixin, unittest.IsolatedAsyncioTestCase):
         start = datetime.now(timezone.utc) - timedelta(minutes=5)
         await self.seed_user(
             level=3,
+            cleared_levels=[1, 2],
             start_time=utc_iso(start),
             total_prompts=4,
             failed_attempts=1,
@@ -403,9 +423,9 @@ class TestConcurrentSubmissions(TempDbMixin, unittest.IsolatedAsyncioTestCase):
 
         user = await self.fetch_user("usr_score_1")
         self.assertIsNotNone(user["completed_at"])
-        # Score persisted exactly once: 1000 - 15 (P=4) - 2*5 (T=5) - 25 (K=1)
+        # Score persisted exactly once: 999 - 15 (P=4) - 2*5 (T=5) - 25 (K=1)
         minutes = elapsed_minutes(user["start_time"], user["completed_at"])
-        expected = calculate_final_score(4, minutes, 1)
+        expected = calculate_final_score(3, 4, minutes, 1)
         self.assertEqual(user["final_score"], expected)
 
         # Exactly one correct submission was recorded
@@ -429,9 +449,9 @@ class TestConcurrentSubmissions(TempDbMixin, unittest.IsolatedAsyncioTestCase):
         for result in results:
             self.assertEqual(result["status"], STATUS_CORRECT)
         for idx in range(5):
-            self.assertEqual(
-                (await self.fetch_user(f"usr_par_{idx}"))["active_level"], 2
-            )
+            user = await self.fetch_user(f"usr_par_{idx}")
+            self.assertEqual(user["active_level"], 1)
+            self.assertEqual(json.loads(user["cleared_levels"]), [1])
 
 
 # ---------------------------------------------------------------------------
@@ -461,6 +481,7 @@ class TestSubmitKeyEndpoint(TempDbMixin, unittest.TestCase):
                 user_id="usr_l3",
                 username="LevelThree",
                 level=3,
+                cleared_levels=[1, 2],
                 start_time=utc_iso(now - timedelta(minutes=12)),
                 total_prompts=6,
                 failed_attempts=2,
@@ -490,7 +511,7 @@ class TestSubmitKeyEndpoint(TempDbMixin, unittest.TestCase):
     def test_completed_arena_returns_400(self):
         resp = self.client.post(
             "/api/submit-key",
-            json={"user_id": "usr_done", "key": LEVEL_KEYS[3]},
+            json={"user_id": "usr_done", "level": 3, "key": LEVEL_KEYS[3]},
         )
         self.assertEqual(resp.status_code, 400)
         self.assertIn("already completed", resp.json()["detail"])
@@ -509,7 +530,7 @@ class TestSubmitKeyEndpoint(TempDbMixin, unittest.TestCase):
             asyncio.run(self.fetch_user("usr_l1"))["failed_attempts"], 2
         )
 
-    def test_correct_key_unlocks_next_level(self):
+    def test_correct_key_appends_to_cleared_levels(self):
         resp = self.client.post(
             "/api/submit-key",
             json={"user_id": "usr_l1", "level": 1, "key": LEVEL_KEYS[1]},
@@ -517,11 +538,11 @@ class TestSubmitKeyEndpoint(TempDbMixin, unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         self.assertEqual(data["status"], STATUS_CORRECT)
-        self.assertEqual(data["unlocked_level"], 2)
+        self.assertEqual(data["unlocked_level"], 1)
         self.assertIsNone(data["final_score"])
-        self.assertEqual(
-            asyncio.run(self.fetch_user("usr_l1"))["active_level"], 2
-        )
+        user = asyncio.run(self.fetch_user("usr_l1"))
+        self.assertEqual(user["active_level"], 1)
+        self.assertEqual(json.loads(user["cleared_levels"]), [1])
 
     def test_level_three_completion_returns_final_score(self):
         resp = self.client.post(
@@ -540,7 +561,7 @@ class TestSubmitKeyEndpoint(TempDbMixin, unittest.TestCase):
         self.assertEqual(stats["fail_penalty"], 50)
         self.assertEqual(
             data["final_score"],
-            calculate_final_score(6, stats["elapsed_minutes"], 2),
+            calculate_final_score(3, 6, stats["elapsed_minutes"], 2),
         )
 
         user = asyncio.run(self.fetch_user("usr_l3"))
@@ -554,7 +575,7 @@ class TestSubmitKeyEndpoint(TempDbMixin, unittest.TestCase):
     def test_empty_key_rejected(self):
         # Empty string never matches a level key -> incorrect, not a crash
         resp = self.client.post(
-            "/api/submit-key", json={"user_id": "usr_l1", "key": ""}
+            "/api/submit-key", json={"user_id": "usr_l1", "level": 1, "key": ""}
         )
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["status"], STATUS_INCORRECT)

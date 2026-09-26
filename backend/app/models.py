@@ -65,7 +65,7 @@ class SubmitKeyResponse(BaseModel):
 class LeaderboardEntry(BaseModel):
     rank: int
     username: str
-    current_level: int
+    active_level: int
     completed: bool
     final_score: float
     total_prompts: int
@@ -78,7 +78,7 @@ class UserStateResponse(BaseModel):
     user_id: str
     username: str
     email: Optional[str] = None
-    current_level: int
+    active_level: int
     start_time: str
     completed_at: Optional[str] = None
     total_prompts: int = 0

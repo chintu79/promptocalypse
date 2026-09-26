@@ -20,6 +20,7 @@ from app.config import get_settings
 from app.database import get_db_context, init_db
 from app.main import app
 from app.rate_limiter import get_rate_limiter
+from app.routes import game as game_routes
 from app.routes.game import _compute_duration_seconds
 
 
@@ -57,6 +58,9 @@ class TestLeaderboardEndpointIntegration(unittest.TestCase):
         self.temp_db.close()
         os.environ["DB_PATH"] = self.temp_db.name
         get_settings.cache_clear()
+        # Issue #42 caches the leaderboard for 10s; clear it so every test
+        # sees the rows it just seeded.
+        game_routes._leaderboard_cache = {"timestamp": 0, "data": []}
         asyncio.run(init_db())
 
         # Seed test users with varied scores/levels for ranking

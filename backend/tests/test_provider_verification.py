@@ -82,7 +82,7 @@ class TestProviderBaseUrlAndCredentials(unittest.TestCase):
         self.assertEqual(cfg["provider"], "groq")
         self.assertEqual(cfg["base_url"], "https://api.groq.com/openai/v1")
         self.assertEqual(cfg["api_key"], "gsk_sample_groq_key")
-        self.assertEqual(cfg["model"], "llama-3.1-8b-instant")
+        self.assertEqual(cfg["model"], "qwen/qwen3.8-27b")
 
     def test_openrouter_base_url_explicit_configuration(self):
         """OpenRouter provider must explicitly set base_url='https://openrouter.ai/api/v1'."""

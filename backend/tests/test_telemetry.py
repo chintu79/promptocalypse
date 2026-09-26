@@ -390,7 +390,7 @@ class TestTelemetryIntegration(unittest.TestCase):
         # 1. Incorrect flag
         resp_bad = self.client.post(
             "/api/submit-key",
-            json={"user_id": "usr_tel_1", "key": "WRONG_KEY_ABC"},
+            json={"user_id": "usr_tel_1", "level": 1, "key": "WRONG_KEY_ABC"},
         )
         self.assertEqual(resp_bad.status_code, 200)
         self.assertEqual(resp_bad.json()["status"], "incorrect")
@@ -398,7 +398,7 @@ class TestTelemetryIntegration(unittest.TestCase):
         # 2. Correct flag for Level 1
         resp_good = self.client.post(
             "/api/submit-key",
-            json={"user_id": "usr_tel_1", "key": LEVEL_KEYS[1]},
+            json={"user_id": "usr_tel_1", "level": 1, "key": LEVEL_KEYS[1]},
         )
         self.assertEqual(resp_good.status_code, 200)
         self.assertEqual(resp_good.json()["status"], "correct")

@@ -4,7 +4,7 @@ import ArenaPanel from './components/ArenaPanel.tsx'
 import SidePanel from './components/SidePanel.tsx'
 import RightDrawer from './components/RightDrawer.tsx'
 import VictoryModal from './components/VictoryModal.tsx'
-import RegisterModal from './components/RegisterModal.tsx'
+import OnboardingWizard from './components/OnboardingWizard.tsx'
 import type { SessionState, SubmitKeyResponse } from './types'
 import { loadSession, hasValidSession, SESSION_UPDATE_EVENT, saveSession, calculateDynamicScore } from './utils/session'
 
@@ -92,25 +92,28 @@ export default function App() {
 
   return (
     <div className="app-container">
-      {!isAuthenticated && (
-        <RegisterModal onSuccess={handleAuthenticated} />
-      )}
-      <Header session={session} onToggleLeaderboard={() => setLeaderboardOpen((o) => !o)} />
-      <main className="main-content">
-        <ArenaPanel session={session} />
-        <SidePanel onVictory={handleVictory} session={session} />
-      </main>
-      <RightDrawer
-        open={leaderboardOpen}
-        onToggle={() => setLeaderboardOpen((o) => !o)}
-      />
-      {showVictory && (
-        <VictoryModal
-          isOpen={showVictory}
-          onClose={() => setShowVictory(false)}
-          stats={victoryStats}
-          finalScore={finalScore}
-        />
+      {!isAuthenticated ? (
+        <OnboardingWizard onSuccess={handleAuthenticated} />
+      ) : (
+        <>
+          <Header session={session} onToggleLeaderboard={() => setLeaderboardOpen((o) => !o)} />
+          <main className="main-content">
+            <ArenaPanel session={session} />
+            <SidePanel onVictory={handleVictory} session={session} />
+          </main>
+          <RightDrawer
+            open={leaderboardOpen}
+            onToggle={() => setLeaderboardOpen((o) => !o)}
+          />
+          {showVictory && (
+            <VictoryModal
+              isOpen={showVictory}
+              onClose={() => setShowVictory(false)}
+              stats={victoryStats}
+              finalScore={finalScore}
+            />
+          )}
+        </>
       )}
     </div>
   )

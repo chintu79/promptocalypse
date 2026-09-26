@@ -28,7 +28,7 @@ The AI Jailbreak Arena architecture provides a low-latency, tamper-resistant env
 │                          APPLICATION TIER                              │
 │                                                                        │
 │   [ FastAPI Core Gateway (Uvicorn 4-Worker Cluster) ]                  │
-│   ├── In-Memory Sliding-Window Rate Limiter (3s Cooldown)              │
+│   ├── Shared SQLite Sliding-Window Rate Limiter (3s Cooldown)          │
 │   ├── Level 2 Ingress Security Filter (Regex Word Denylist)           │
 │   ├── Level Context Assembler (Stateful Injections)                   │
 │   ├── Outbound Inference Client (Async HTTP Pool)                      │
@@ -77,7 +77,7 @@ Option A (Campus LAN): Direct binding on 0.0.0.0:8000 via local Wi-Fi router sub
 
 Option B (Remote / Zero-Configuration Port Forwarding): cloudflared tunnel creating an encrypted virtual bridge to the host machine without public port exposure or port-forwarding requirements.
 
-Per-Host Throttling: The FastAPI backend maintains an in-memory sliding window timestamp ledger tracking user_id.
+Per-Host Throttling: The FastAPI backend stores the sliding-window timestamp ledger in the shared `rate_limits` SQLite table tracking user_id, so every worker process enforces the same cooldown.
 
 Requests arriving within $< 3.0\text{s}$ of the prior request yield HTTP 429 Too Many Requests.
 
@@ -164,7 +164,7 @@ Execute the following PRAGMAs during database initialization to avoid file-level
 
 SQLPRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;
-PRAGMA busy_timeout = 5000;
+PRAGMA busy_timeout = 10000;
 PRAGMA cache_size = -64000; -- 64MB In-Memory Cache
 
 4. Operational Telemetry & Scoring Subsystem
@@ -211,7 +211,7 @@ LIMIT 50;
 
 5. Failure Modes & Mitigations
 
-Failure ModeImpactArchitectural MitigationAPI Timeout / Model DropUser receives broken state; prompt count still increments.Backend wraps external calls in try/except with an 8-second timeout. If the call fails, prompt and character counters are rolled back, and an HTTP 502 Bad Gateway is returned without penalty.Input Fuzzing ScriptsBrute-force tool attempts dictionary attacks on the API.Enforce a strict 3-second sliding window per user_id. Offending IPs with excessive attempts can be dropped via Cloudflare WAF or local firewall.Simultaneous Level SolvesRace conditions updating progress states.All progression transitions execute within isolated transactions using atomic SQL UPDATE operations.Local Host Network SaturationServer laptop exhausts network connection pool.Host server operates with high file-descriptor limits (ulimit -n 65535) and pooled HTTP keep-alive connections via httpx.AsyncClient(limits=Limits(max_keepalive_connections=50, max_connections=200)).
+Failure ModeImpactArchitectural MitigationAPI Timeout / Model DropUser receives broken state; prompt count still increments.Backend wraps external calls in try/except with an 8-second timeout. If the call fails, prompt and character counters are rolled back, and an HTTP 502 Bad Gateway is returned without penalty.Input Fuzzing ScriptsBrute-force tool attempts dictionary attacks on the API.Enforce a strict 3-second sliding window per user_id. Offending IPs with excessive attempts can be dropped via Cloudflare WAF or local firewall.Simultaneous Level SolvesRace conditions updating progress states.All progression transitions execute within isolated transactions using atomic SQL UPDATE operations.Local Host Network SaturationServer laptop exhausts network connection pool.Host server operates with high file-descriptor limits (ulimit -n 65535) and pooled HTTP keep-alive connections via httpx.AsyncClient(limits=Limits(max_keepalive_connections=100, max_connections=250)).
 
 6. Hardware Resource Consumption Analysis
 

@@ -343,6 +343,9 @@ The user interface is split into two primary panels:
 
 1. **Groq Pay-As-You-Go Setup:**
    * Fund account with **$5.00** prepaid balance.
+   * Unfunded and free-tier provider accounts (e.g. OpenRouter free models) are
+     hard-capped at ~20 requests per minute - pre-fund **$5-$10** of credits
+     before an event, otherwise 200 participants exhaust the quota in seconds (Issue #41).
    * Generate API key and set environment variable:
      ```bash
      export GROQ_API_KEY="gsk_..."

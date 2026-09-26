@@ -130,11 +130,11 @@ class TestLeaderboardEndpointIntegration(unittest.TestCase):
                 await db.commit()
 
         asyncio.run(seed())
-        get_rate_limiter().reset()
+        asyncio.run(get_rate_limiter().reset())
         self.client = TestClient(app)
 
     def tearDown(self):
-        get_rate_limiter().reset()
+        asyncio.run(get_rate_limiter().reset())
         app.dependency_overrides.clear()
         if os.path.exists(self.temp_db.name):
             os.remove(self.temp_db.name)

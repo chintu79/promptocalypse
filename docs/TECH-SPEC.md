@@ -183,7 +183,7 @@ The datastore is built on **SQLite 3.37+** utilizing `WAL` (Write-Ahead Logging)
 -- Pragmas applied on connection initialization
 PRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;
-PRAGMA busy_timeout = 5000;
+PRAGMA busy_timeout = 10000;
 PRAGMA cache_size = -64000;
 PRAGMA foreign_keys = ON;
 
@@ -239,6 +239,13 @@ CREATE TABLE submissions (
 );
 
 CREATE INDEX idx_submissions_user ON submissions(user_id);
+
+-- 4. Shared rate-limiter cooldown state (Issue #40): one row per participant
+--    so every Uvicorn worker process enforces the same sliding window
+CREATE TABLE rate_limits (
+    user_id TEXT PRIMARY KEY,
+    last_request_at REAL NOT NULL
+);
 ```
 
 ---
@@ -413,19 +420,20 @@ The upstream model is invoked via `httpx` within an `AsyncOpenAI` client wrapper
 
 ### 6.2 Connection Pool & Timeout Configurations
 * **Transport:** Async HTTP Keep-Alive.
-* **Pool Limits:**
-  * `max_keepalive_connections`: 50
-  * `max_connections`: 150
+* **Pool Limits** (one shared client per process, Issue #41):
+  * `max_keepalive_connections`: 100
+  * `max_connections`: 250
 * **Timeouts:**
   * `connect`: 3.0 seconds
   * `read`: 8.0 seconds
-  * `write`: 3.0 seconds
-  * `pool`: 3.0 seconds
+  * `write`: 8.0 seconds
+  * `pool`: 8.0 seconds
 
 ### 6.3 Transient Error Handling & Retry Matrix
 * **HTTP 429 (Upstream Rate Limit):** Wait exponential backoff ($0.5\text{s}$, $1.0\text{s}$), max 2 retries.
 * **HTTP 500 / 503 (Groq Service Disruption):** Abort immediately. Return HTTP 502 to user. **Do not increment prompt ledger count** to avoid unfair penalties.
 * **Timeout Exception:** Abort request. Return generic connection alert: `{"detail": "Inference gateway timeout; prompt unbilled."}`
+* **Circuit Breaker (Issue #41):** after three consecutive upstream 503/504 responses the circuit opens - requests fail fast with HTTP 503 and a `Retry-After` header instead of waiting out the 8-second timeout, and half-open-probe the provider again after 30 seconds.
 
 ---
 

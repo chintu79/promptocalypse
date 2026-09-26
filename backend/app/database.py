@@ -62,6 +62,14 @@ CREATE TABLE IF NOT EXISTS submissions (
     submitted_at TIMESTAMP NOT NULL,
     FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+
+-- 4. Shared rate-limiter cooldown state (Issue #40)
+-- One row per participant so every Uvicorn worker process enforces the same
+-- cooldown window; in-memory state exists once per worker process only.
+CREATE TABLE IF NOT EXISTS rate_limits (
+    user_id TEXT PRIMARY KEY,
+    last_request_at REAL NOT NULL
+);
 """
 
 # ---------------------------------------------------------------------------
@@ -99,7 +107,7 @@ CREATE INDEX IF NOT EXISTS idx_submissions_user
 # ---------------------------------------------------------------------------
 # - WAL:          Non-blocking concurrent readers during write transactions.
 # - synchronous:  NORMAL is safe with WAL and avoids fsync on every commit.
-# - busy_timeout: Wait up to 5 s for a write-lock instead of failing immediately.
+# - busy_timeout: Wait up to 10 s for a write-lock instead of failing immediately.
 # - cache_size:   -64000 → 64 MB in-memory page cache (negative = KiB).
 # - foreign_keys: Enforce FK constraints at runtime (SQLite default is OFF).
 # ---------------------------------------------------------------------------
@@ -107,7 +115,7 @@ CREATE INDEX IF NOT EXISTS idx_submissions_user
 _PRAGMAS = [
     "PRAGMA journal_mode = WAL;",
     "PRAGMA synchronous = NORMAL;",
-    "PRAGMA busy_timeout = 5000;",
+    "PRAGMA busy_timeout = 10000;",
     "PRAGMA cache_size = -64000;",
     "PRAGMA foreign_keys = ON;",
 ]

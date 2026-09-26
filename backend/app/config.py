@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     OPENROUTER_API_KEY: str = ""
     ADMIN_TOKEN: str = "admin"
     DB_PATH: str = "arena.db"
-    GROQ_MODEL: str = "llama-3.1-8b-instant"
+    GROQ_MODEL: str = "qwen/qwen3.8-27b"
     GROQ_BASE_URL: str = "https://api.groq.com/openai/v1"
     OPENROUTER_MODEL: str = "meta-llama/llama-3.1-8b-instruct"
     OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"

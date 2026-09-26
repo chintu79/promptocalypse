@@ -96,10 +96,10 @@ export default function App() {
         <OnboardingWizard onSuccess={handleAuthenticated} />
       ) : (
         <>
-          <Header session={session} />
+          <Header session={session} onToggleLeaderboard={() => setLeaderboardOpen((o) => !o)} />
           <main className="main-content">
             <ArenaPanel session={session} />
-            <SidePanel onVictory={handleVictory} />
+            <SidePanel onVictory={handleVictory} session={session} />
           </main>
           <RightDrawer
             open={leaderboardOpen}

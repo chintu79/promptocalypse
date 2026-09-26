@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { setActiveLevel } from '../api/client'
+import { setActiveLevel, fetchLeaderboard } from '../api/client'
 import { saveSession } from '../utils/session'
 import type { SessionState } from '../types'
 import {
@@ -15,9 +15,10 @@ import './Header.css'
 interface HeaderProps {
   /** Optional external session override (e.g. from parent state/context) */
   session?: SessionState | null
+  onToggleLeaderboard?: () => void
 }
 
-export default function Header({ session: propSession }: HeaderProps) {
+export default function Header({ session: propSession, onToggleLeaderboard }: HeaderProps) {
   // Load and recover session from localStorage (th_session_v1)
   const [internalSession, setInternalSession] = useState<SessionState>(() => {
     return propSession || loadSession() || getOrCreateDefaultSession()
@@ -63,6 +64,29 @@ export default function Header({ session: propSession }: HeaderProps) {
   const completed = Boolean(internalSession.completed)
   const totalPrompts = internalSession.total_prompts ?? 0
   const failedAttempts = internalSession.failed_attempts ?? 0
+
+  // ── User Rank Fetching ──
+  const [userRank, setUserRank] = useState<number | null>(null)
+  useEffect(() => {
+    if (!internalSession.username) return
+    const fetchRank = async () => {
+      try {
+        const board = await fetchLeaderboard()
+        const entry = board.find(b => b.username === internalSession.username)
+        if (entry) setUserRank(entry.rank)
+      } catch (e) {
+        // ignore errors
+      }
+    }
+    let timeoutId: ReturnType<typeof setTimeout>
+    const poll = async () => {
+      await fetchRank()
+      const jitter = Math.random() * 5000
+      timeoutId = setTimeout(poll, 30000 + jitter)
+    }
+    poll()
+    return () => clearTimeout(timeoutId)
+  }, [internalSession.username])
 
   // ── Stopwatch Timer counting elapsed time from start_time ──
   const [elapsedSeconds, setElapsedSeconds] = useState<number>(() => {
@@ -143,58 +167,88 @@ export default function Header({ session: propSession }: HeaderProps) {
         )}
       </div>
 
-      {/* Segmented Step Indicator: Level 1, 2, 3 */}
-      <nav aria-label="Level Progress" className="hud-steps">
-        {levels.map((lvl) => {
-          const isCompleted = completed || clearedLevels.includes(lvl)
-          const isActive = !completed && activeLevel === lvl
-          const isLocked = !completed && !clearedLevels.includes(lvl) && activeLevel !== lvl
+      {/* Center Cluster: Levels + Leaderboard */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+        <nav aria-label="Level Progress" className="hud-steps">
+          {levels.map((lvl) => {
+            const isCompleted = completed || clearedLevels.includes(lvl)
+            const isActive = !completed && activeLevel === lvl
+            const isLocked = !completed && !clearedLevels.includes(lvl) && activeLevel !== lvl
 
-          let stepClass = 'hud-step'
-          let icon = '🔒'
-          let ariaStatus = 'Locked'
+            let stepClass = 'hud-step'
+            let icon = '🔒'
+            let ariaStatus = 'Locked'
 
-          if (isCompleted) {
-            stepClass += ' hud-step--completed'
-            icon = '✓'
-            ariaStatus = 'Completed'
-          } else if (isActive) {
-            stepClass += ' hud-step--active'
-            icon = '●'
-            ariaStatus = 'Active'
-          } else if (isLocked) {
-            stepClass += ' hud-step--locked'
-            icon = '🔒'
-            ariaStatus = 'Locked'
-          }
+            if (isCompleted) {
+              stepClass += ' hud-step--completed'
+              icon = '✓'
+              ariaStatus = 'Completed'
+            } else if (isActive) {
+              stepClass += ' hud-step--active'
+              icon = '●'
+              ariaStatus = 'Active'
+            } else if (isLocked) {
+              stepClass += ' hud-step--locked'
+              icon = '🔒'
+              ariaStatus = 'Locked'
+            }
 
-          const targetNames = ["RefundBot", "SysAdmin", "Blackout"]
-          return (
-            <button
-              key={lvl}
-              className={stepClass}
-              title={`Level ${lvl}: ${ariaStatus}`}
-              aria-current={isActive ? 'step' : undefined}
-              onClick={() => {
-                if (!completed && internalSession.user_id && activeLevel !== lvl) {
-                   setActiveLevel(internalSession.user_id, lvl)
-                   const updated = { ...internalSession, active_level: lvl }
-                   saveSession(updated)
-                   setInternalSession(updated)
-                }
-              }}
-              disabled={completed}
-              style={{ background: 'transparent', border: 'none', cursor: completed ? 'default' : 'pointer' }}
-            >
-              <span className="hud-step__icon">{icon}</span>
-              <span className="hud-step__label">Target {lvl}: {targetNames[lvl - 1]}</span>
-            </button>
-          )
-        })}
-      </nav>
+            const targetNames = ["RefundBot", "SysAdmin", "Blackout"]
+            return (
+              <button
+                key={lvl}
+                className={stepClass}
+                title={`Level ${lvl}: ${ariaStatus}`}
+                aria-current={isActive ? 'step' : undefined}
+                onClick={() => {
+                  if (!completed && internalSession.user_id && activeLevel !== lvl) {
+                     setActiveLevel(internalSession.user_id, lvl)
+                     const updated = { ...internalSession, active_level: lvl }
+                     saveSession(updated)
+                     setInternalSession(updated)
+                  }
+                }}
+                disabled={completed}
+                style={{ background: 'transparent', border: 'none', cursor: completed ? 'default' : 'pointer' }}
+              >
+                <span className="hud-step__icon">{icon}</span>
+                <span className="hud-step__label">Target {lvl}: {targetNames[lvl - 1]}</span>
+              </button>
+            )
+          })}
+        </nav>
+
+        <button
+          type="button"
+          className="hud-step"
+          onClick={onToggleLeaderboard}
+          style={{ 
+            background: 'var(--bg-primary)', 
+            border: '1px solid var(--border)', 
+            borderRadius: '4px',
+            cursor: 'pointer', 
+            padding: '0.3rem 0.6rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem',
+            color: 'white'
+          }}
+        >
+          <span className="hud-step__icon">🏆</span>
+          <span className="hud-step__label">Leaderboard</span>
+        </button>
+      </div>
 
       {/* Live Telemetry Bar */}
       <div className="hud-telemetry">
+        {/* User Rank */}
+        <div className="hud-metric">
+          <span className="hud-metric__label">RANK:</span>
+          <span className="hud-metric__value">
+            {userRank !== null ? `#${userRank}` : '--'}
+          </span>
+        </div>
+
         {/* Stopwatch Timer */}
         <div className="hud-metric">
           <span className="hud-metric__label">TIME:</span>

@@ -1,4 +1,3 @@
-import ScenarioBriefing from "./ScenarioBriefing"
 import ChatTerminal from './ChatTerminal'
 import type { SessionState } from '../types'
 import { loadSession } from '../utils/session'
@@ -25,12 +24,13 @@ export default function ArenaPanel({ session }: ArenaPanelProps) {
 
   return (
     <div className="arena-panel-inner" style={{ display: 'flex', flexDirection: 'column', height: '100%', flex: 1 }}>
-      <ScenarioBriefing currentLevel={currentLevel} />
-      <ChatTerminal
-        userId={userId}
-        currentLevel={currentLevel}
-        onSendPrompt={handleSendPrompt}
-      />
+      <div className="flex-1 min-h-0" style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+        <ChatTerminal
+          userId={userId}
+          currentLevel={currentLevel}
+          onSendPrompt={handleSendPrompt}
+        />
+      </div>
     </div>
   )
 }

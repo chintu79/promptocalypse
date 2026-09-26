@@ -117,8 +117,23 @@ app.include_router(game_router)
 app.include_router(health_router)
 
 
+import os
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
 @app.get("/health", tags=["health"])
 async def health_check() -> dict[str, str]:
     """Health check endpoint to verify backend availability."""
     return {"status": "ok"}
+
+frontend_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../frontend/dist"))
+if os.path.isdir(frontend_dist):
+    app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist, "assets")), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_frontend(full_path: str):
+        path = os.path.join(frontend_dist, full_path)
+        if os.path.isfile(path):
+            return FileResponse(path)
+        return FileResponse(os.path.join(frontend_dist, "index.html"))
 

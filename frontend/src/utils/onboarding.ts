@@ -107,7 +107,7 @@ export function createSessionFromUser(
     user_id: user.user_id,
     username: user.username,
     email,
-    current_level: user.current_level ?? 1,
+    active_level: user.active_level ?? 1,
     start_time: user.start_time,
     total_prompts: user.total_prompts ?? 0,
     failed_attempts: user.failed_attempts ?? 0,

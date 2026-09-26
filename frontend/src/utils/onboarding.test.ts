@@ -16,7 +16,7 @@ import {
 const registeredUser: User = {
   user_id: 'usr_54',
   username: 'Neo',
-  current_level: 1,
+  active_level: 1, cleared_levels: [],
   start_time: '2026-09-25T12:00:00.000Z',
   total_prompts: 0,
   failed_attempts: 0,
@@ -108,14 +108,14 @@ describe('interactive onboarding sequence', () => {
     assert.equal(session?.username, 'Neo')
     assert.equal(session?.start_time, registeredUser.start_time)
     assert.equal(session?.total_prompts, 0)
-    assert.equal(session?.current_level, 1)
+    assert.equal(session?.active_level, 1)
   })
 
   it('preserves the authoritative response session values', () => {
     const session = createSessionFromUser(
       {
         ...registeredUser,
-        current_level: 2,
+        active_level: 2,
         start_time: '2026-09-25T12:34:56.000Z',
         total_prompts: 4,
         failed_attempts: 2,
@@ -129,7 +129,7 @@ describe('interactive onboarding sequence', () => {
       user_id: 'usr_54',
       username: 'Neo',
       email: 'canonical@example.com',
-      current_level: 2,
+      active_level: 2,
       start_time: '2026-09-25T12:34:56.000Z',
       total_prompts: 4,
       failed_attempts: 2,

@@ -40,7 +40,7 @@ export interface SessionState {
   username: string;
   email?: string;
   active_level: number
-  cleared_levels: number[];
+  cleared_levels?: number[];
   active_cooldown_until?: number | null;
   local_chat_history?: Record<string, ChatMessage[]>;
   start_time?: string;
@@ -61,9 +61,14 @@ export interface SubmitKeyResponse {
   final_score?: number;
   completion_time?: string;
   stats?: {
+    base_points?: number;
     total_prompts: number;
-    elapsed_minutes: number;
+    prompt_penalty?: number;
+    elapsed_minutes?: number;
+    time_penalty?: number;
     failed_attempts: number;
+    fail_penalty?: number;
+    final_score?: number;
   };
 }
 

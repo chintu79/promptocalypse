@@ -201,15 +201,17 @@ _leaderboard_cache = {"timestamp": 0, "data": []}
 async def get_leaderboard() -> list[LeaderboardEntry]:
     """
     Retrieve ranked leaderboard of participants.
-    
-    Tier 1 (Completed): Fetch users where completed_at IS NOT NULL
+
+    Tier 1 (Completed): Users where completed_at IS NOT NULL,
     ordered by final_score DESC, total_prompts ASC, total_chars ASC.
-    
-    Tier 2 (Active): Fetch users where completed_at IS NULL
-    ordered by active_level DESC, total_prompts ASC, total_chars ASC.
-    
-    Concatenates the lists and dynamically assigns the rank integer iteratively.
+
+    Tier 2 (Active): Users where completed_at IS NULL,
+    ordered by number of cleared levels DESC (fixes #81 — non-linear progression),
+    then total_prompts ASC, total_chars ASC.
+
+    Concatenates the lists and dynamically assigns rank integers.
     """
+    import json as _json
     global _leaderboard_cache
     if time.time() - _leaderboard_cache["timestamp"] < 10:
         return _leaderboard_cache["data"]
@@ -218,7 +220,7 @@ async def get_leaderboard() -> list[LeaderboardEntry]:
         cursor1 = await db.execute(
             """
             SELECT
-                username, active_level, completed_at, start_time,
+                username, active_level, cleared_levels, completed_at, start_time,
                 total_prompts, total_chars, final_score
             FROM users
             WHERE is_disqualified = 0 AND completed_at IS NOT NULL
@@ -228,44 +230,44 @@ async def get_leaderboard() -> list[LeaderboardEntry]:
         )
         tier1_rows = await cursor1.fetchall()
 
-        # Tier 2: Active
+        # Tier 2: Active — sort by cleared_levels count, NOT active_level
+        # (active_level only reflects which tab the user has open, not progress)
         cursor2 = await db.execute(
             """
             SELECT
-                username, active_level, completed_at, start_time,
+                username, active_level, cleared_levels, completed_at, start_time,
                 total_prompts, total_chars, final_score
             FROM users
             WHERE is_disqualified = 0 AND completed_at IS NULL
-            ORDER BY active_level DESC, total_prompts ASC, total_chars ASC
+            ORDER BY json_array_length(cleared_levels) DESC, total_prompts ASC, total_chars ASC
             LIMIT 50
             """
         )
         tier2_rows = await cursor2.fetchall()
 
     all_rows = tier1_rows + tier2_rows
-    # enforce overall limit of 50
     all_rows = all_rows[:50]
 
     now_iso = datetime.now(timezone.utc).isoformat()
     entries: list[LeaderboardEntry] = []
-    
+
     for rank, row in enumerate(all_rows, start=1):
         end_time_str = row["completed_at"] if row["completed_at"] else now_iso
-        duration_seconds = _compute_duration_seconds(
-            row["start_time"], end_time_str
-        )
+        duration_seconds = _compute_duration_seconds(row["start_time"], end_time_str)
         completed = row["completed_at"] is not None
+        cleared_levels = _json.loads(row["cleared_levels"]) if row["cleared_levels"] else []
         entries.append(
             LeaderboardEntry(
                 rank=rank,
                 username=row["username"],
                 active_level=row["active_level"],
+                cleared_levels=cleared_levels,
                 completed=completed,
                 final_score=row["final_score"],
                 total_prompts=row["total_prompts"],
                 total_chars=row["total_chars"],
                 duration_seconds=duration_seconds,
-                status="Completed" if completed else "In Progress"
+                status="Completed" if completed else "In Progress",
             )
         )
     _leaderboard_cache = {"timestamp": time.time(), "data": entries}

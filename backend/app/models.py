@@ -66,6 +66,7 @@ class LeaderboardEntry(BaseModel):
     rank: int
     username: str
     active_level: int
+    cleared_levels: list[int] = []
     completed: bool
     final_score: float
     total_prompts: int

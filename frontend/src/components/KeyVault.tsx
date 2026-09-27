@@ -65,16 +65,20 @@ export default function KeyVault({ onVictory, onSubmitKey }: KeyVaultProps) {
           setStatusMessage((prev) => (prev?.type === 'error' ? null : prev))
         }, 2000) // 2-second alert red window per TECH-SPEC §3.1
       } else if (response.status === 'correct') {
-        // Unlocked intermediate level (1 -> 2 or 2 -> 3)
-        const nextLevel = response.unlocked_level ?? currentLevel + 1
+        // Level cleared — update cleared_levels in local session
+        const clearedLevel = response.unlocked_level ?? currentLevel
+        const prevCleared = session.cleared_levels ?? []
+        const newCleared = prevCleared.includes(clearedLevel)
+          ? prevCleared
+          : [...prevCleared, clearedLevel]
         const updatedSession: SessionState = {
           ...session,
-          active_level: nextLevel,
+          cleared_levels: newCleared,
         }
         saveSession(updatedSession)
         setKeyInput('')
         setStatusMessage({
-          text: response.message || `Level ${currentLevel} cleared! Unlocking Level ${nextLevel}...`,
+          text: response.message || `Level ${clearedLevel} cleared!`,
           type: 'success',
         })
       } else if (response.status === 'completed') {

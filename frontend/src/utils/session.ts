@@ -13,20 +13,26 @@ export function calculatePromptPenalty(prompts: number): number {
 }
 
 /**
- * Calculates current dynamic score based on TECH-SPEC §5.1 formula:
- * S = max(0, 1000 - 15 * max(0, P - 3) - 2 * T - 25 * K)
+ * Calculates current dynamic score based on non-linear progression.
+ * Base score = 333 pts × cleared levels. Deductions per TECH-SPEC §5.1:
+ * S = max(0, base - 15 * max(0, P - 3) - 2 * T - 25 * K)
+ *
+ * @param clearedCount number of levels already cleared (0-3)
  */
 export function calculateDynamicScore({
   prompts = 0,
   elapsedSeconds = 0,
   failedAttempts = 0,
-  baseScore = 1000,
+  clearedCount = 0,
 }: {
   prompts?: number
   elapsedSeconds?: number
   failedAttempts?: number
-  baseScore?: number
+  /** Number of levels cleared so far (determines base score). */
+  clearedCount?: number
 }): number {
+  const BASE_SCORE_PER_LEVEL = 333
+  const baseScore = BASE_SCORE_PER_LEVEL * clearedCount
   const promptPenalty = calculatePromptPenalty(prompts)
   const elapsedMinutes = Math.floor(Math.max(0, elapsedSeconds) / 60)
   const timePenalty = elapsedMinutes * 2

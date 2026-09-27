@@ -20,10 +20,12 @@ export default function App() {
     const handleTimeout = () => {
       const current = loadSession()
       if (current && !current.completed) {
+        const clearedCount = current.cleared_levels?.length ?? 0
         const finalScore = calculateDynamicScore({
           prompts: current.total_prompts || 0,
           elapsedSeconds: 7200,
           failedAttempts: current.failed_attempts || 0,
+          clearedCount,
         })
         const updated = { ...current, completed: true, final_score: finalScore }
         saveSession(updated)
@@ -31,7 +33,7 @@ export default function App() {
         setShowVictory(true)
         setFinalScore(finalScore)
         setVictoryStats({
-          base_points: 1000,
+          base_points: 333 * clearedCount,
           total_prompts: current.total_prompts || 0,
           prompt_penalty: 0,
           elapsed_minutes: 120,

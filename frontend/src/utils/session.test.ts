@@ -48,26 +48,39 @@ describe('Cyberpunk HUD & Session Logic', () => {
   })
 
   describe('calculateDynamicScore', () => {
-    it('returns base score of 1000 for fresh run', () => {
+    it('returns 0 for fresh run with no cleared levels', () => {
       const score = calculateDynamicScore({
         prompts: 0,
         elapsedSeconds: 0,
         failedAttempts: 0,
+        clearedCount: 0,
       })
-      assert.equal(score, 1000)
+      assert.equal(score, 0)
+    })
+
+    it('returns 999 for 3 cleared levels, no penalties (333*3=999)', () => {
+      const score = calculateDynamicScore({
+        prompts: 0,
+        elapsedSeconds: 0,
+        failedAttempts: 0,
+        clearedCount: 3,
+      })
+      assert.equal(score, 999)
     })
 
     it('deducts prompt penalty, elapsed time (2 pts/min), and failed attempts (25 pts/fail)', () => {
+      // 3 cleared levels: 333 * 3 = 999 base
       // 5 prompts: (5 - 3) * 15 = 30 pts
       // 120s elapsed: 2 minutes * 2 = 4 pts
       // 1 failed attempt: 1 * 25 = 25 pts
-      // Total: 1000 - 30 - 4 - 25 = 941 pts
+      // Total: 999 - 30 - 4 - 25 = 940 pts
       const score = calculateDynamicScore({
         prompts: 5,
         elapsedSeconds: 120,
         failedAttempts: 1,
+        clearedCount: 3,
       })
-      assert.equal(score, 941)
+      assert.equal(score, 940)
     })
 
     it('floors score at 0', () => {
@@ -75,6 +88,7 @@ describe('Cyberpunk HUD & Session Logic', () => {
         prompts: 100,
         elapsedSeconds: 36000,
         failedAttempts: 50,
+        clearedCount: 1,
       })
       assert.equal(score, 0)
     })

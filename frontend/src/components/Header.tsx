@@ -135,6 +135,7 @@ export default function Header({ session: propSession, onToggleLeaderboard }: He
       prompts: totalPrompts,
       elapsedSeconds,
       failedAttempts,
+      clearedCount: clearedLevels.length,
     })
   }, [
     completed,
@@ -142,6 +143,7 @@ export default function Header({ session: propSession, onToggleLeaderboard }: He
     totalPrompts,
     elapsedSeconds,
     failedAttempts,
+    clearedLevels.length,
   ])
 
   // ── Step Indicator Configurations ──

@@ -38,22 +38,13 @@ router = APIRouter(prefix="/api", tags=["game"])
 
 
 def _compute_duration_seconds(start_iso: str, end_iso: str) -> int:
-    """
-    Compute elapsed seconds between two ISO 8601 timestamp strings.
-
-    Handles both timezone-aware and naive (assumed UTC) timestamps.
-    Returns 0 if parsing fails or result is negative.
-    """
+    """Compute elapsed seconds between two ISO 8601 timestamp strings."""
     try:
         start = datetime.fromisoformat(start_iso)
         end = datetime.fromisoformat(end_iso)
-        # Ensure both are tz-aware for comparison
-        if start.tzinfo is None:
-            start = start.replace(tzinfo=timezone.utc)
-        if end.tzinfo is None:
-            end = end.replace(tzinfo=timezone.utc)
-        delta = int((end - start).total_seconds())
-        return max(0, delta)
+        start = start if start.tzinfo else start.replace(tzinfo=timezone.utc)
+        end = end if end.tzinfo else end.replace(tzinfo=timezone.utc)
+        return max(0, int((end - start).total_seconds()))
     except (ValueError, TypeError):
         return 0
 

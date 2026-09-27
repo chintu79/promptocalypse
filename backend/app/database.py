@@ -195,14 +195,6 @@ async def init_db() -> None:
         await db.close()
 
 
-async def get_db() -> aiosqlite.Connection:
-    """
-    DEPRECATED for manual use. 
-    Use get_db_context() to properly acquire and release from the pool.
-    """
-    pool = get_pool()
-    return await pool.acquire()
-
 @asynccontextmanager
 async def get_db_context() -> AsyncGenerator[aiosqlite.Connection, None]:
     """

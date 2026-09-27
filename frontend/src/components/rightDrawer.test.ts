@@ -9,6 +9,7 @@ const read = (file: string) => readFileSync(new URL(file, import.meta.url), 'utf
 const drawer = read('./RightDrawer.tsx')
 const drawerCss = read('./RightDrawer.css')
 const sidePanel = read('./SidePanel.tsx')
+const header = read('./Header.tsx')
 const app = read('../App.tsx')
 
 describe('collapsible leaderboard drawer (issue #57)', () => {
@@ -17,10 +18,10 @@ describe('collapsible leaderboard drawer (issue #57)', () => {
     assert.match(app, /<RightDrawer\s+open=\{leaderboardOpen\}/)
   })
 
-  it('offers a floating 🏆 Leaderboard toggle', () => {
-    assert.match(drawer, /🏆 Leaderboard/)
-    assert.match(drawer, /aria-expanded=\{open\}/)
-    assert.match(drawerCss, /\.leaderboard-toggle\s*\{[^}]*position: fixed/)
+  it('offers a 🏆 Leaderboard toggle in header', () => {
+    assert.match(header, /🏆/)
+    assert.match(header, /Leaderboard/)
+    assert.match(header, /onToggleLeaderboard/)
   })
 
   it('slides in and out with translateX', () => {

@@ -2,27 +2,6 @@
    Collapsible Leaderboard Drawer — Issue #57
    ========================================================================== */
 
-.leaderboard-toggle {
-  position: fixed;
-  top: 4.5rem;
-  right: 1rem;
-  z-index: 40;
-  padding: 0.5rem 0.85rem;
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
-  letter-spacing: 0.05em;
-  color: var(--accent);
-  background-color: var(--surface);
-  border: 1px solid var(--accent);
-  border-radius: 4px;
-  cursor: pointer;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
-}
-
-.leaderboard-toggle:hover {
-  background-color: var(--surface-elevated);
-}
-
 .right-drawer {
   position: fixed;
   top: 0;

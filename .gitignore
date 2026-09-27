@@ -5,6 +5,8 @@ __pycache__/
 .venv/
 venv/
 *.db
+*.db-wal
+*.db-shm
 .env
 logs/
 *.log

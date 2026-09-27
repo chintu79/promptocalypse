@@ -40,7 +40,7 @@ describe('OnboardingWizard interaction contract', () => {
   it('mounts the arena and timer only inside the authenticated branch', () => {
     assert.match(
       app,
-      /!isAuthenticated \? \(\s*<OnboardingWizard[\s\S]*?\) : \(\s*<>\s*<Header session=\{session\} \/>/
+      /!isAuthenticated \? \(\s*<OnboardingWizard[\s\S]*?\) : \(\s*<>\s*<Header\s+session=\{session\}/
     )
     assert.doesNotMatch(app, /getOrCreateDefaultSession/)
   })

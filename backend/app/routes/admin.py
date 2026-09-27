@@ -11,7 +11,7 @@ Features:
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.config import Settings, get_settings
@@ -24,24 +24,9 @@ bearer_scheme = HTTPBearer(auto_error=False)
 async def verify_admin_token(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
     settings: Annotated[Settings, Depends(get_settings)],
-    authorization: Annotated[str | None, Header()] = None,
 ) -> None:
-    """
-    Validate that the incoming request contains a valid admin bearer token.
-    Raises HTTP 401 if missing or invalid.
-    """
-    token: str | None = None
-
-    if credentials and credentials.credentials:
-        token = credentials.credentials
-    elif authorization:
-        parts = authorization.strip().split()
-        if len(parts) == 2 and parts[0].lower() == "bearer":
-            token = parts[1]
-        elif len(parts) == 1:
-            token = parts[0]
-
-    if not token or token != settings.ADMIN_TOKEN:
+    """Validate that the incoming request contains a valid admin bearer token."""
+    if not credentials or credentials.credentials != settings.ADMIN_TOKEN:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or missing admin bearer token",

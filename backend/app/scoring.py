@@ -43,17 +43,8 @@ STATUS_COMPLETED = "completed"
 
 
 def parse_timestamp(value: str) -> datetime:
-    """
-    Parse a stored ISO-8601 timestamp into an aware UTC datetime.
-
-    Accepts both '+00:00' offsets (datetime.now(timezone.utc).isoformat())
-    and legacy trailing 'Z' suffixes (datetime.utcnow().isoformat() + 'Z').
-    Naive timestamps are assumed to be UTC.
-    """
-    normalized = value.strip()
-    if normalized.endswith("Z"):
-        normalized = normalized[:-1] + "+00:00"
-    parsed = datetime.fromisoformat(normalized)
+    """Parse a stored ISO-8601 timestamp into an aware UTC datetime."""
+    parsed = datetime.fromisoformat(value.strip())
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)

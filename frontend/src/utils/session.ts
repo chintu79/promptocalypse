@@ -46,7 +46,9 @@ export function formatElapsedTime(totalSeconds: number): string {
 
   const pad = (n: number) => n.toString().padStart(2, '0')
 
-  return `${pad(hours)}:${pad(minutes)}:${pad(remainingSecs)}`
+  return hours > 0
+    ? `${pad(hours)}:${pad(minutes)}:${pad(remainingSecs)}`
+    : `${pad(minutes)}:${pad(remainingSecs)}`
 }
 
 /**

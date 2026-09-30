@@ -1,0 +1,111 @@
+/* ============================================================
+   UiTour.css — driver.js popover overrides for the dark arena theme
+   ============================================================ */
+
+/* Overlay dimming */
+.driver-overlay {
+  background: rgba(0, 0, 0, 0.75) !important;
+}
+
+/* Popover card */
+.driver-popover {
+  background: #141825 !important;
+  border: 1px solid #00ff9d !important;
+  border-radius: 6px !important;
+  color: #f0f4fc !important;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace !important;
+  box-shadow: 0 0 24px rgba(0, 255, 157, 0.15), 0 8px 32px rgba(0, 0, 0, 0.6) !important;
+  max-width: 360px !important;
+}
+
+/* Title */
+.driver-popover-title {
+  color: #00ff9d !important;
+  font-size: 0.95rem !important;
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace !important;
+}
+
+/* Description text */
+.driver-popover-description {
+  color: #c0c8e0 !important;
+  font-size: 0.82rem !important;
+  line-height: 1.55 !important;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace !important;
+}
+
+/* Progress indicator */
+.driver-popover-progress-text {
+  color: #6b7394 !important;
+  font-size: 0.72rem !important;
+  font-family: 'JetBrains Mono', monospace !important;
+}
+
+/* Navigation buttons */
+.driver-popover-navigation-btns button {
+  background: transparent !important;
+  color: #00ff9d !important;
+  border: 1px solid #00ff9d !important;
+  border-radius: 3px !important;
+  font-family: 'JetBrains Mono', monospace !important;
+  font-size: 0.78rem !important;
+  padding: 0.35rem 0.8rem !important;
+  cursor: pointer !important;
+  text-transform: uppercase !important;
+  transition: background 0.15s, color 0.15s !important;
+}
+
+.driver-popover-navigation-btns button:hover {
+  background: #00ff9d !important;
+  color: #0a0d14 !important;
+}
+
+/* Close button */
+.driver-popover-close-btn {
+  color: #6b7394 !important;
+  font-size: 1.2rem !important;
+}
+
+.driver-popover-close-btn:hover {
+  color: #ff4d6a !important;
+}
+
+/* Highlighted element border glow */
+.driver-active-element {
+  box-shadow: 0 0 0 3px rgba(0, 255, 157, 0.4) !important;
+  border-radius: 4px !important;
+}
+
+/* Arrow color to match popover border */
+.driver-popover-arrow-side-left .driver-popover-arrow,
+.driver-popover-arrow-side-right .driver-popover-arrow,
+.driver-popover-arrow-side-top .driver-popover-arrow,
+.driver-popover-arrow-side-bottom .driver-popover-arrow {
+  border-color: #00ff9d !important;
+}
+
+/* Help button in the header */
+.tour-help-btn {
+  background: transparent;
+  border: 1px solid #3a4265;
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6b7394;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.tour-help-btn:hover {
+  border-color: #00ff9d;
+  color: #00ff9d;
+}

@@ -10,6 +10,7 @@ import {
   getOrCreateDefaultSession,
   SESSION_UPDATE_EVENT,
 } from '../utils/session'
+import { TOUR_EVENT } from './UiTour'
 import './Header.css'
 
 interface HeaderProps {
@@ -238,6 +239,16 @@ export default function Header({ session: propSession, onToggleLeaderboard }: He
         >
           <span className="hud-step__icon">🏆</span>
           <span className="hud-step__label">Leaderboard</span>
+        </button>
+
+        <button
+          type="button"
+          className="tour-help-btn"
+          title="Replay UI tour"
+          aria-label="Replay UI tour"
+          onClick={() => window.dispatchEvent(new CustomEvent(TOUR_EVENT))}
+        >
+          ?
         </button>
       </div>
 

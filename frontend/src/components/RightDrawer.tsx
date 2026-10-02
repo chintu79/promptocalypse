@@ -1,6 +1,4 @@
-import { useEffect, useState } from 'react'
-import type { LeaderboardEntry } from '../types'
-import { fetchLeaderboard } from '../api/client'
+import { useLeaderboardStream } from '../hooks/useLeaderboardStream'
 import './RightDrawer.css'
 
 interface RightDrawerProps {
@@ -8,27 +6,9 @@ interface RightDrawerProps {
   onToggle: () => void
 }
 
-// Issue #57: poll only while the drawer is open — each open fetches fresh ranks,
-// so a closed drawer costs zero leaderboard requests.
-const POLL_MS = 10000
-
 export default function RightDrawer({ open, onToggle }: RightDrawerProps) {
-  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
-
-  useEffect(() => {
-    if (!open) return
-    let timeoutId: ReturnType<typeof setTimeout>
-
-    const poll = () => {
-      fetchLeaderboard().then(setLeaderboard).catch(console.error)
-      const jitter = Math.random() * 5000
-      timeoutId = setTimeout(poll, POLL_MS + jitter)
-    }
-
-    poll()
-
-    return () => clearTimeout(timeoutId)
-  }, [open])
+  // Use SSE for real-time leaderboard updates while drawer is open
+  const leaderboard = useLeaderboardStream(open)
 
   return (
     <aside

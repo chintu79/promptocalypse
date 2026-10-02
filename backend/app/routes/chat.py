@@ -146,19 +146,76 @@ class UpstreamCircuitBreaker:
 
 UPSTREAM_BREAKER = UpstreamCircuitBreaker()
 
+# ── Multi-endpoint round-robin for Ollama load balancing ──
+# Each remote PC runs Ollama on :11434 — we cycle requests across them.
+import itertools
+_ollama_clients: list[openai.AsyncOpenAI] = []
+_ollama_cycle: itertools.cycle | None = None
+_ollama_http_clients: list[httpx.AsyncClient] = []
+
+
+def _ensure_ollama_pool(settings: Settings) -> None:
+    """Lazily create one AsyncOpenAI client per Ollama endpoint."""
+    global _ollama_clients, _ollama_cycle, _ollama_http_clients
+    if _ollama_clients:
+        # Rebuild any closed http clients
+        for i, hc in enumerate(_ollama_http_clients):
+            if hc.is_closed:
+                _ollama_http_clients[i] = httpx.AsyncClient(
+                    timeout=LLM_TIMEOUT, limits=LLM_POOL_LIMITS
+                )
+                config = get_llm_config(settings)
+                endpoints = config.get("endpoints", [config["base_url"]])
+                _ollama_clients[i] = openai.AsyncOpenAI(
+                    base_url=endpoints[i],
+                    api_key="ollama",
+                    http_client=_ollama_http_clients[i],
+                )
+        return
+
+    config = get_llm_config(settings)
+    endpoints = config.get("endpoints", [config["base_url"]])
+    for url in endpoints:
+        hc = httpx.AsyncClient(timeout=LLM_TIMEOUT, limits=LLM_POOL_LIMITS)
+        client = openai.AsyncOpenAI(
+            base_url=url, api_key="ollama", http_client=hc
+        )
+        _ollama_http_clients.append(hc)
+        _ollama_clients.append(client)
+    _ollama_cycle = itertools.cycle(range(len(_ollama_clients)))
+    logger.info(
+        "Ollama endpoint pool initialized",
+        extra={"event": "ollama_pool_init", "endpoints": endpoints, "count": len(endpoints)},
+    )
+
+
+def get_next_ollama_client(settings: Settings) -> openai.AsyncOpenAI:
+    """Return the next Ollama client via round-robin."""
+    _ensure_ollama_pool(settings)
+    idx = next(_ollama_cycle)  # type: ignore[arg-type]
+    return _ollama_clients[idx]
+
 
 def get_groq_client(
     settings: Annotated[Settings, Depends(get_settings)]
 ) -> openai.AsyncOpenAI:
-    """Dependency provider for AsyncOpenAI bound to the shared connection pool (Issue #41)."""
+    """Dependency provider for AsyncOpenAI bound to the shared connection pool (Issue #41).
+
+    For Ollama with multiple endpoints, returns a round-robin'd client.
+    For cloud providers, returns the single shared client as before.
+    """
+    config = get_llm_config(settings)
+
+    if config["provider"] == "ollama":
+        return get_next_ollama_client(settings)
+
+    # Cloud providers (groq / openrouter): single shared client
     global _shared_http_client
-    # A caller closing its wrapper tears the shared transport down; rebuild it.
     if _shared_http_client is None or _shared_http_client.is_closed:
         _shared_http_client = httpx.AsyncClient(
             timeout=LLM_TIMEOUT,
             limits=LLM_POOL_LIMITS,
         )
-    config = get_llm_config(settings)
     return openai.AsyncOpenAI(
         base_url=config["base_url"],
         api_key=config["api_key"],

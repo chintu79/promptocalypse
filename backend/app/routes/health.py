@@ -15,14 +15,11 @@ from typing import Annotated, Optional
 from fastapi import APIRouter, Depends, Response
 import openai
 
-from app.config import Settings, get_settings
+from app.config import Settings, get_llm_config, get_settings
 from app.database import get_db_context
 from app.logger import logger
 from app.models import HealthDatabaseStatus, HealthProviderStatus, HealthResponse
 from app.routes.chat import get_groq_client
-
-# Upstream provider identity reported in the health payload.
-PROVIDER_NAME = "groq"
 
 # Provider probe cache lifetime — exactly 60 seconds (Issue #26).
 PROVIDER_CACHE_TTL_SECONDS = 60.0
@@ -130,12 +127,13 @@ class ProviderHealthCache:
         if cached is not None:
             return {**cached, "cached": True}
 
-        # Unconfigured provider: no API key → never call upstream.
-        if not settings.GROQ_API_KEY:
+        # Unconfigured cloud provider: no API key and not using local Ollama.
+        llm_cfg = get_llm_config(settings)
+        if llm_cfg["provider"] != "ollama" and not settings.GROQ_API_KEY:
             snapshot = {
                 "status": "unconfigured",
                 "latency_ms": None,
-                "error": "GROQ_API_KEY is not configured",
+                "error": "No API key configured and not using local Ollama",
                 "checked_at": utc_now_iso(),
             }
             self._store(snapshot)
@@ -256,13 +254,14 @@ async def health_diagnostic(
 
     _maybe_log_status_transition(overall_status, database["status"], provider["status"])
 
+    llm_cfg = get_llm_config(settings)
     return HealthResponse(
         status=overall_status,
         database=HealthDatabaseStatus(**database),
         provider=HealthProviderStatus(
             status=provider["status"],
-            name=PROVIDER_NAME,
-            model=settings.GROQ_MODEL,
+            name=llm_cfg["provider"],
+            model=llm_cfg["model"],
             latency_ms=provider["latency_ms"],
             cached=provider["cached"],
             checked_at=provider["checked_at"],

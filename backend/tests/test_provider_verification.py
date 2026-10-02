@@ -101,6 +101,7 @@ class TestProviderBaseUrlAndCredentials(unittest.TestCase):
     def test_auto_detect_openrouter_from_key(self):
         """Auto-detects OpenRouter when OPENROUTER_API_KEY is present or GROQ_API_KEY has sk-or- prefix."""
         settings_auto = Settings(
+            LLM_PROVIDER="groq",
             GROQ_API_KEY="",
             OPENROUTER_API_KEY="sk-or-sample-key",
         )

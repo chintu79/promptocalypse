@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
-import { setActiveLevel, fetchLeaderboard } from '../api/client'
+import { setActiveLevel } from '../api/client'
+import { useLeaderboardStream } from '../hooks/useLeaderboardStream'
 import { saveSession } from '../utils/session'
 import type { SessionState } from '../types'
 import {
@@ -66,29 +67,16 @@ export default function Header({ session: propSession, onToggleLeaderboard }: He
   const totalPrompts = internalSession.total_prompts ?? 0
   const failedAttempts = internalSession.failed_attempts ?? 0
 
-  // ── User Rank Fetching ──
+  // ── User Rank Fetching (Real-time via SSE) ──
   const [userRank, setUserRank] = useState<number | null>(null)
-  useEffect(() => {
-    if (!internalSession.username) return
-    const fetchRank = async () => {
-      try {
-        const board = await fetchLeaderboard()
-        const entry = board.find(b => b.username === internalSession.username)
-        if (entry) setUserRank(entry.rank)
-      } catch (e) {
-        // ignore errors
-      }
-    }
-    let timeoutId: ReturnType<typeof setTimeout>
-    const poll = async () => {
-      await fetchRank()
-      const jitter = Math.random() * 5000
-      timeoutId = setTimeout(poll, 30000 + jitter)
-    }
-    poll()
-    return () => clearTimeout(timeoutId)
-  }, [internalSession.username])
+  const isRegistered = Boolean(internalSession.username)
+  const leaderboard = useLeaderboardStream(isRegistered)
 
+  useEffect(() => {
+    if (!internalSession.username || !leaderboard.length) return
+    const entry = leaderboard.find(b => b.username === internalSession.username)
+    if (entry) setUserRank(entry.rank)
+  }, [internalSession.username, leaderboard])
   // ── Stopwatch Timer counting elapsed time from start_time ──
   const [elapsedSeconds, setElapsedSeconds] = useState<number>(() => {
     if (!internalSession.start_time) return 0

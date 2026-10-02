@@ -51,9 +51,11 @@ class TestHealthEndpoint(unittest.TestCase):
         self.temp_db = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         self.temp_db.close()
         os.environ["DB_PATH"] = self.temp_db.name
-        # Save any pre-existing key so tearDown can restore it untouched.
+        # Save any pre-existing keys so tearDown can restore it untouched.
         self._original_groq_key = os.environ.get("GROQ_API_KEY")
+        self._original_llm_provider = os.environ.get("LLM_PROVIDER")
         os.environ["GROQ_API_KEY"] = "gsk_test_health_dummy_key"
+        os.environ["LLM_PROVIDER"] = "groq"
         get_settings.cache_clear()
         asyncio.run(init_db())
         reset_health_status_logging()
@@ -81,6 +83,12 @@ class TestHealthEndpoint(unittest.TestCase):
             os.environ.pop("GROQ_API_KEY", None)
         else:
             os.environ["GROQ_API_KEY"] = self._original_groq_key
+            
+        if self._original_llm_provider is None:
+            os.environ.pop("LLM_PROVIDER", None)
+        else:
+            os.environ["LLM_PROVIDER"] = self._original_llm_provider
+            
         os.environ.pop("DB_PATH", None)
         get_settings.cache_clear()
         for path in [self.temp_db.name, f"{self.temp_db.name}-wal", f"{self.temp_db.name}-shm"]:
@@ -229,6 +237,7 @@ class TestHealthEndpoint(unittest.TestCase):
     def test_empty_groq_api_key_reports_unconfigured(self):
         """An empty API key reports 'unconfigured' and never calls upstream."""
         os.environ["GROQ_API_KEY"] = ""
+        os.environ["LLM_PROVIDER"] = "groq"
         get_settings.cache_clear()
 
         res = self.client.get("/api/health")

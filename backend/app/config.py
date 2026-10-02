@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     GROQ_BASE_URL: str = "https://api.groq.com/openai/v1"
     OPENROUTER_MODEL: str = "meta-llama/llama-3.1-8b-instruct"
     OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
+    OLLAMA_ENDPOINTS: str = "http://192.168.1.101:11434/v1,http://192.168.1.102:11434/v1"
+    OLLAMA_MODEL: str = "llama3.2:latest"
     COOLDOWN_SECONDS: float = 3.0
     MAX_PROMPT_LENGTH: int = 1000
     MAX_TOKENS: int = 150
@@ -45,24 +47,45 @@ def get_settings() -> Settings:
 
 def get_llm_config(settings: Settings | None = None) -> dict[str, str]:
     """
-    Resolve active LLM provider configuration (Groq or OpenRouter).
+    Resolve active LLM provider configuration.
 
-    Verifies explicit base_url configuration:
-    - OpenRouter: base_url="https://openrouter.ai/api/v1"
-    - Groq: base_url="https://api.groq.com/openai/v1"
+    Supported providers:
+    - ollama:      Local Ollama server (OpenAI-compatible at /v1)
+    - groq:        Groq cloud API
+    - openrouter:  OpenRouter cloud API
+
+    Ollama requires no API key; the openai SDK accepts "ollama" as a
+    placeholder value.
     """
     if settings is None:
         settings = get_settings()
 
     provider = settings.LLM_PROVIDER.lower().strip()
 
-    # Automatically detect OpenRouter if OPENROUTER_API_KEY is present or GROQ_API_KEY has OpenRouter prefix
-    if not settings.GROQ_API_KEY and settings.OPENROUTER_API_KEY:
-        provider = "openrouter"
-    elif settings.GROQ_API_KEY and settings.GROQ_API_KEY.startswith("sk-or-"):
-        provider = "openrouter"
+    # Auto-detect cloud providers from API keys if provider is the default 'groq' or 'auto'
+    if provider in ("groq", "auto", ""):
+        if not settings.GROQ_API_KEY and settings.OPENROUTER_API_KEY:
+            provider = "openrouter"
+        elif settings.GROQ_API_KEY and settings.GROQ_API_KEY.startswith("sk-or-"):
+            provider = "openrouter"
+        elif not settings.GROQ_API_KEY and not settings.OPENROUTER_API_KEY:
+            # If no API keys are provided and it's default groq, allow it to remain groq 
+            # so health checks can correctly report 'unconfigured' instead of failing over to ollama
+            pass
 
-    if provider == "openrouter":
+    if provider == "ollama":
+        endpoints = [
+            u.strip() for u in settings.OLLAMA_ENDPOINTS.split(",") if u.strip()
+        ] or ["http://localhost:11434/v1"]
+        model = settings.OLLAMA_MODEL.strip() or "llama3.2:latest"
+        return {
+            "provider": "ollama",
+            "api_key": "ollama",  # Ollama doesn't require a real key; placeholder for openai SDK
+            "base_url": endpoints[0],  # default for single-client callers (health check)
+            "endpoints": endpoints,    # full list for round-robin in chat route
+            "model": model,
+        }
+    elif provider == "openrouter":
         api_key = settings.OPENROUTER_API_KEY or settings.GROQ_API_KEY
         base_url = settings.OPENROUTER_BASE_URL.strip() if settings.OPENROUTER_BASE_URL else "https://openrouter.ai/api/v1"
         model = settings.OPENROUTER_MODEL if settings.OPENROUTER_API_KEY else settings.GROQ_MODEL
@@ -82,3 +105,4 @@ def get_llm_config(settings: Settings | None = None) -> dict[str, str]:
             "base_url": base_url,
             "model": model,
         }
+

@@ -214,7 +214,7 @@ class TestLeaderboardEndpointIntegration(unittest.TestCase):
         resp = self.client.get("/api/leaderboard")
         data = resp.json()
         expected_keys = {
-            "rank", "username", "active_level", "completed",
+            "rank", "username", "active_level", "cleared_levels", "completed",
             "final_score", "total_prompts", "total_chars", "duration_seconds", "status",
         }
         for entry in data:

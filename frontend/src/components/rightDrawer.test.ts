@@ -31,6 +31,6 @@ describe('collapsible leaderboard drawer (issue #57)', () => {
   })
 
   it('pauses leaderboard polling while the drawer is closed', () => {
-    assert.match(drawer, /if \(!open\) return/)
+    assert.match(drawer, /useLeaderboardStream\(open\)/)
   })
 })

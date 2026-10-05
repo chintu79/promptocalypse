@@ -56,8 +56,10 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-# Edit .env with your Groq API key
-uvicorn app.main:app --reload --port 8000
+# Edit .env with your Groq API key (or OLLAMA_ENDPOINTS for local LLM)
+
+# Start backend bound to all network interfaces (allows LAN access)
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 ### Frontend
@@ -66,9 +68,17 @@ uvicorn app.main:app --reload --port 8000
 cd frontend
 npm install
 npm run dev
-# Opens at http://localhost:3000
-# API requests proxy to http://localhost:8000
+# Opens at http://localhost:3000 (and exposes to your LAN IP)
+# API requests are automatically proxied to the backend
 ```
+
+## Running on a Local Network (LAN)
+
+To play the game with multiple people on your local network (e.g. at an office or hackathon):
+1. Ensure you run the backend using `--host 0.0.0.0` as shown above.
+2. Ensure you run the frontend using `npm run dev` (we already configure `vite --host` in package.json).
+3. Find your machine's LAN IP (e.g. `192.168.1.x`).
+4. Other devices on the same Wi-Fi can play by visiting `http://<YOUR_LAN_IP>:3000`.
 
 ## Game Design
 

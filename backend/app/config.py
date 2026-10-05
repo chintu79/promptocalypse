@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str = ""
     OPENROUTER_API_KEY: str = ""
     ADMIN_TOKEN: str = "admin"
+    ADMIN_USERNAME: str = "krishna"
+    ADMIN_PASSWORD: str = "krishna04@gmail.com"
     DB_PATH: str = "arena.db"
     GROQ_MODEL: str = "qwen/qwen3.8-27b"
     GROQ_BASE_URL: str = "https://api.groq.com/openai/v1"

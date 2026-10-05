@@ -6,10 +6,15 @@ import RightDrawer from './components/RightDrawer.tsx'
 import VictoryModal from './components/VictoryModal.tsx'
 import OnboardingWizard from './components/OnboardingWizard.tsx'
 import UiTour from './components/UiTour.tsx'
+import AdminDashboard from './components/AdminDashboard.tsx'
 import type { SessionState, SubmitKeyResponse } from './types'
 import { loadSession, hasValidSession, SESSION_UPDATE_EVENT, saveSession, calculateDynamicScore } from './utils/session'
 
 export default function App() {
+  if (window.location.pathname === '/admin') {
+    return <AdminDashboard />
+  }
+
   const [session, setSession] = useState<SessionState | null>(() => {
     return loadSession()
   })

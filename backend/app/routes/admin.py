@@ -9,6 +9,7 @@ Features:
   warning/error traces, protected by static bearer token (settings.ADMIN_TOKEN).
 """
 
+import secrets
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -34,7 +35,10 @@ async def admin_login(
     req: LoginRequest,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> LoginResponse:
-    if req.username == settings.ADMIN_USERNAME and req.password == settings.ADMIN_PASSWORD:
+    is_username_valid = secrets.compare_digest(req.username, settings.ADMIN_USERNAME)
+    is_password_valid = secrets.compare_digest(req.password, settings.ADMIN_PASSWORD)
+    
+    if is_username_valid and is_password_valid:
         return LoginResponse(token=settings.ADMIN_TOKEN)
     raise HTTPException(status_code=401, detail="Invalid admin credentials")
 
@@ -44,7 +48,7 @@ async def verify_admin_token(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> None:
     """Validate that the incoming request contains a valid admin bearer token."""
-    if not credentials or credentials.credentials != settings.ADMIN_TOKEN:
+    if not credentials or not secrets.compare_digest(credentials.credentials, settings.ADMIN_TOKEN):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or missing admin bearer token",
